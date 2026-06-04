@@ -19,6 +19,8 @@ export interface BuildOrder extends BaseOrder {
         hullId: string;
         // 在未来的扩展中，这里可以添加装备配置 loadout，目前先留空采用默认配置
         loadout?: any;
+        drones?: string[];
+        droneEquips?: Record<string, string>; // 无人机槽位配置，如 { 'DR1': 'mine_drone', ... }
     };
 }
 
@@ -122,6 +124,8 @@ function processBuildOrders(worldState: any, now: number) {
     
     // 全宇宙货船数量统计
     let totalFreighterCount = 0;
+    // 全宇宙矿船数量统计
+    let totalMinerCount = 0;
 
     // 统计逻辑
     const countShip = (ship: any) => {
@@ -130,6 +134,11 @@ function processBuildOrders(worldState: any, now: number) {
         // 仅统计货船数量
         if (ship.type === 'freighter' || (ship.hullId && ship.hullId.includes('freighter'))) {
             totalFreighterCount++;
+        }
+        
+        // 统计矿船数量
+        if (ship.type === 'miner' || (ship.hullId && ship.hullId.includes('miner'))) {
+            totalMinerCount++;
         }
 
         const facId = ship.factionId;
@@ -158,6 +167,7 @@ function processBuildOrders(worldState: any, now: number) {
     targetFactions.forEach(fId => pendingBuilds[fId] = { fighter: 0, destroyer: 0 });
     
     let pendingFreighterBuilds = 0;
+    let pendingMinerBuilds = 0;
 
     worldState.orders.forEach((o: any) => {
         if (o.type === 'BUILD') {
@@ -165,6 +175,10 @@ function processBuildOrders(worldState: any, now: number) {
             // 统计排队中的货船
             if (hull.includes('freighter')) {
                 pendingFreighterBuilds++;
+            }
+            // 统计排队中的矿船
+            if (hull.includes('miner')) {
+                pendingMinerBuilds++;
             }
             
             if (targetFactions.includes(o.factionId)) {
@@ -180,6 +194,8 @@ function processBuildOrders(worldState: any, now: number) {
     // 2. 根据统计结果，生成补充订单
     
     // 2.1 全局货船补齐逻辑 (目标: 50 艘)
+    // 暂时注释货船生成，方便测试矿船
+    /*
     const missingFreighters = Math.max(0, 50 - totalFreighterCount - pendingFreighterBuilds);
     if (missingFreighters > 0) {
         for (let i = 0; i < missingFreighters; i++) {
@@ -202,6 +218,42 @@ function processBuildOrders(worldState: any, now: number) {
             OrderSystem.addOrder(worldState, order);
         }
     }
+    */
+
+    // 2.2 全局矿船补齐逻辑 (目标: 30 艘)
+    const missingMiners = Math.max(0, 30 - totalMinerCount - pendingMinerBuilds);
+    if (missingMiners > 0) {
+        for (let i = 0; i < missingMiners; i++) {
+            // 随机分配给 1-4 阵营或 0(中立商人)
+            const randomFaction = Math.floor(Math.random() * 5); // 0, 1, 2, 3, 4
+            const presetKey = 'basic_miner';
+            const preset = GameConfig.FACTION_PRESETS[presetKey];
+            
+            const order: BuildOrder = {
+                id: `order_build_miner_${randomFaction}_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+                type: 'BUILD',
+                factionId: randomFaction,
+                status: 'PENDING',
+                timestamp: now,
+                payload: {
+                    hullId: preset ? preset.hullId : presetKey,
+                    loadout: preset ? JSON.parse(JSON.stringify(preset.slots)) : {},
+                    drones: ['mine_drone_preset', 'mine_drone_preset', 'mine_drone_preset', 'mine_drone_preset', 'mine_drone_preset'],
+                    droneEquips: {
+                        'DR1': 'mine_drone',
+                        'DR2': 'mine_drone',
+                        'DR3': 'mine_drone',
+                        'DR4': 'mine_drone',
+                        'DR5': 'mine_drone'
+                    }
+                }
+            };
+            OrderSystem.addOrder(worldState, order);
+        }
+    }
+
+    // 暂时注释战机和驱逐舰生成，方便测试矿船
+    /*
     targetFactions.forEach(fId => {
         const counts = factionShipCounts[fId];
         const pending = pendingBuilds[fId];
@@ -248,6 +300,7 @@ function processBuildOrders(worldState: any, now: number) {
             // console.log(`[订单系统] 阵营 ${fId} 驱逐舰数量不足(${counts.destroyer}/10)，已下发驱逐舰建造订单: ${order.id}`);
         }
     });
+    */
 }
 
 // ============================================================================

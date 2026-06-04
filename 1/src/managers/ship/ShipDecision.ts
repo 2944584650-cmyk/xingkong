@@ -74,6 +74,10 @@ export class ShipDecision {
                 ship.taskStack.push({ action: 'JUMP_TO_SECTOR', target: order.payload.targetSector });
                 ship.taskStack.push({ action: 'PATROL_SECTOR', duration: 999999 }); 
                 break;
+            case 'MINE':
+                ship.taskStack.push({ action: 'JUMP_TO_SECTOR', target: order.payload.targetSector });
+                ship.taskStack.push({ action: 'MINE_SECTOR', targetSector: order.payload.targetSector });
+                break;
         }
     }
 }
@@ -171,6 +175,41 @@ export class ShipExecution {
                 ship.commandState = 'DOCK';
                 // 预留，当前端或 OOS 判定完成 docking 后，需要外部调用 ship.taskStack.shift()
                 break;
+                
+            case 'MINE_SECTOR': {
+                // console.log(`[DEBUG - MINE_SECTOR 执行] 飞船 ${ship.name} (ID: ${ship.id}) 进入采矿作业节点，当前星区: ${ship.location.sector}`);
+
+                // 1. 空矿检测
+                const hasAsteroids = worldState.asteroidBelts && worldState.asteroidBelts.some((b: any) => b.sector === ship.location.sector);
+                if (!hasAsteroids) {
+                    console.log(`[采矿调度] ${ship.name} 在 ${ship.location.sector} 未发现小行星带，直接中止采矿任务。`);
+                    ship.taskStack.shift();
+                    break;
+                }
+
+                // 2. 80% 库存检测
+                const InventoryManager = (window as any).InventoryManager;
+                if (InventoryManager) {
+                    const currentCargo = InventoryManager.getCurrentVolume(ship.id);
+                    const capacity = InventoryManager.getCapacity(ship.id);
+                    
+                    if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
+                        console.log(`[采矿] ${ship.name} 货舱容量已达80% (${currentCargo}/${capacity})，结束采矿任务。`);
+                        ship.taskStack.shift();
+                        ship.commandState = null;
+                        
+                        // 如果有绑定的采矿订单，标记为完成 (交由后续逻辑如归仓结算处理)
+                        if (ship.orderQueue && ship.orderQueue[0] && ship.orderQueue[0].type === 'MINE') {
+                            ship.orderQueue.shift();
+                        }
+                        break;
+                    }
+                }
+
+                // 3. 驻留发呆 (配合底层 ShipManager.ts 的后台自动采矿逻辑，只要挂着此状态即可)
+                ship.commandState = 'MINING';
+                break;
+            }
         }
     }
 
