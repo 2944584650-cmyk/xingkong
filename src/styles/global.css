@@ -1,0 +1,312 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Golden Age of Sci-Fi Theme */
+  --ga-primary: #ffffff; /* 纯净白底 */
+  --ga-secondary: #f8fafc; /* 极浅灰 */
+  --ga-accent: #0f172a; /* 深邃藏青/黑蓝，用于文本和重要线条 */
+  --ga-highlight: #3b82f6; /* 科技蓝点缀 */
+  
+  --ga-text-main: #0f172a;
+  --ga-text-muted: #475569;
+  --ga-text-inverse: #ffffff;
+  
+  --ga-bg-base: #f1f5f9; /* 区分底层背景 */
+  --ga-bg-panel: #ffffff; /* 禁止半透明和磨砂 */
+  
+  --ga-border: #94a3b8; /* 浅色金属线框加深一点 */
+  --ga-border-strong: #0f172a; /* 强调线框 */
+  
+  /* 极细的蓝图金属线框网格 */
+  --ga-grid: linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+             linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--font-main);
+  background-color: transparent;
+  color: var(--ga-text-main);
+}
+
+/* React Root Overlay */
+#react-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Let clicks pass through to Phaser by default */
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Base UI Elements */
+.ga-pointer-events-auto {
+  pointer-events: auto;
+}
+
+/* Golden Age Tech Panel with Diagonal Cut Corners (clip-path) */
+.ga-panel {
+  background: var(--ga-bg-panel);
+  position: relative;
+  overflow: hidden;
+  /* 黄金时代硬切角 */
+  clip-path: polygon(
+    0 12px,
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%
+  );
+  filter: drop-shadow(4px 4px 0 rgba(15, 23, 42, 0.1)); /* clip-path 下的实体阴影 */
+}
+
+/* 蓝图背景层 */
+.ga-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: var(--ga-grid);
+  background-size: 20px 20px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 线框描边修饰 (因为 clip-path 会切掉 border，所以用伪元素内部描边) */
+.ga-panel::after {
+  content: '';
+  position: absolute;
+  top: 0px; left: 0px; right: 0px; bottom: 0px;
+  pointer-events: none;
+  z-index: 2;
+  clip-path: polygon(
+    0 12px,
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%
+  );
+  border: 1px solid var(--ga-border);
+}
+
+.ga-panel > * {
+  position: relative;
+  z-index: 3;
+}
+
+.ga-panel-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--ga-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--ga-bg-panel);
+  position: relative;
+}
+
+/* 科技感对角线修饰 */
+.ga-panel-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 30%;
+  height: 2px;
+  background: var(--ga-highlight);
+}
+
+.ga-panel-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ga-text-main);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标题前的小方块修饰 */
+.ga-panel-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--ga-highlight);
+}
+
+.ga-button {
+  background: var(--ga-bg-panel);
+  border: 1px solid var(--ga-border-strong);
+  color: var(--ga-text-main);
+  padding: 8px 24px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  position: relative;
+}
+
+.ga-button::before {
+  content: '';
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 4px; height: 4px;
+  background: transparent;
+  border-right: 1px solid var(--ga-border-strong);
+  border-bottom: 1px solid var(--ga-border-strong);
+}
+
+.ga-button:hover {
+  background: var(--ga-text-main);
+  color: var(--ga-text-inverse);
+}
+
+.ga-button-primary {
+  background: var(--ga-text-main);
+  color: var(--ga-text-inverse);
+  border-color: var(--ga-text-main);
+}
+
+.ga-button-primary:hover {
+  background: var(--ga-highlight);
+  border-color: var(--ga-highlight);
+}
+
+.ga-button-icon {
+  background: transparent;
+  border: none;
+  color: var(--ga-text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s ease;
+}
+
+.ga-button-icon:hover {
+  color: var(--ga-text-main);
+}
+
+/* 导航栏样式：极简蓝图风 */
+.ga-nav-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.ga-nav-btn {
+  background: var(--ga-bg-panel);
+  border: 1px solid var(--ga-border);
+  padding: 10px 24px;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ga-text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  position: relative;
+}
+
+/* 底部极细蓝线修饰（未激活状态隐藏） */
+.ga-nav-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  width: 80%;
+  height: 2px;
+  background: var(--ga-highlight);
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+.ga-nav-btn:hover, .ga-nav-btn.active {
+  color: var(--ga-text-main);
+  border-color: var(--ga-border-strong);
+  background: var(--ga-bg-base);
+}
+
+.ga-nav-btn.active::after {
+  transform: scaleX(1);
+}
+
+/* Modals Overlay - 移除毛玻璃，使用实体半透明底色，防止掉帧 */
+.ga-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+/* Scrollbar tweaks */
+.ga-panel *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ga-panel *::-webkit-scrollbar-track {
+  background: var(--ga-bg-base);
+  border-left: 1px solid var(--ga-border);
+}
+.ga-panel *::-webkit-scrollbar-thumb {
+  background: var(--ga-border);
+}
+.ga-panel *::-webkit-scrollbar-thumb:hover {
+  background: var(--ga-border-strong);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ga-secondary);
+  border-left: 1px solid var(--ga-border);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ga-border-strong);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ga-text-main);
+}
+
+@keyframes pulse-orange {
+  0% {
+      box-shadow: 0 0 10px rgba(255, 102, 0, 0.4), inset 0 0 5px rgba(255, 102, 0, 0.2);
+      border-color: rgba(255, 102, 0, 0.5);
+  }
+  100% {
+      box-shadow: 0 0 25px rgba(255, 102, 0, 0.9), inset 0 0 15px rgba(255, 102, 0, 0.5);
+      border-color: rgba(255, 102, 0, 1);
+  }
+}

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>1</title>
+        <style>
+            /* Reset CSS: Please avoid making changes here unless you know what you're doing :) */
+            *,
+            *::before,
+            *::after {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+    
+            html, body {
+                width: 100%;
+                height: 100%;
+            }
+    
+            body {
+                line-height: 1;
+                font-family: Arial, sans-serif;
+                background-color: #040218;
+                overflow: hidden; /* 防止出现滚动条 */
+                /* 防止长按文本被选中或高亮 */
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+                /* 禁用移动端长按弹出菜单/文本选中放大镜/手势操作 */
+                -webkit-touch-callout: none;
+                touch-action: none;
+            }
+
+            /* 但是对于聊天输入框，必须允许选中文字，否则无法光标操作 */
+            input, textarea {
+                -webkit-user-select: text;
+                -moz-user-select: text;
+                -ms-user-select: text;
+                user-select: text;
+            }
+            
+            #game-container {
+                /* Set right and top to fit into the empty space left by MainUI (62% width, 60% height) */
+                position: absolute;
+                top: 0;
+                right: 0;
+                width: 62vw;
+                height: 60vh;
+                image-rendering: pixelated; /* 防止模糊核心CSS属性 */
+                -webkit-font-smoothing: antialiased; /* 保证文字清晰 */
+                z-index: 10;
+            }
+            
+            /* 新增的 UI 布局容器，包裹在 game-container 上方，但将中间镂空 */
+            #react-root {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 100;
+                pointer-events: none; /* 让中间区域的鼠标事件穿透到游戏画布 */
+            }
+    
+            ol, ul {
+                list-style: none;
+            }
+    
+            img, video {
+                max-width: 100%;
+                height: auto;
+                display: block;
+            }
+    
+            a {
+                text-decoration: none;
+                color: inherit;
+            }
+
+        </style>
+    </head>
+    <body>
+        <div id="game-container"></div>
+        <!-- 远距离战术雷达图标层，不受 WebGL 缩放影响 -->
+        <div id="tactical-icons-layer" style="
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            pointer-events: none; 
+            z-index: 10; 
+            overflow: hidden;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+        "></div>
+        <!-- React UI 挂载点 -->
+        <div id="react-root"></div>
+        
+        <script src="./phaser.js"></script>
+        <script type="module" src="./src/main.tsx"></script>
+        <script>
+            // 屏蔽全局右键和长按默认菜单（但在输入框内保留右键粘贴能力）
+            // 注意：加入了 { passive: false } 来确保在所有现代浏览器中强制拦截长按/手势行为
+            document.addEventListener('contextmenu', function(e) {
+                if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            // 对于 Edge 浏览器，可能需要拦截特定手势引发的辅助操作
+            document.addEventListener('mousedown', function(e) {
+                // 如果是鼠标右键 (button === 2) 或者是触摸屏引发的辅助点击，禁止其引发后续系统级导航行为
+                if (e.button === 2 && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                    // 只阻止部分默认行为，防止把 Phaser 的右键监听也干掉
+                    // e.preventDefault();
+                }
+            }, { passive: false });
+
+            // 防止意外拖拽图片或UI元素破坏布局
+            document.addEventListener('dragstart', function(e) {
+                if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                }
+            });
+        </script>
+    </body>
+    </html>

@@ -1,0 +1,1435 @@
+{
+    "HULLS": {
+        "hull_empire_s": {
+            "name": "帝国轻型机底盘",
+            "desc": "帝国制式战机，平衡性良好，适合护航与巡逻。",
+            "faction": 1,
+            "price": 500,
+            "type": "fighter",
+            "size": "small",
+            "sprite": "empire_fighter.png",
+            "spriteSize": {
+                "width": 38,
+                "height": 22
+            },
+            "baseHp": 100,
+            "mass": 12,
+            "drag": 0.98,
+            "maxInventory": 50,
+            "droneLaunchCapacity": 1,
+            "areas": [
+                {
+                    "id": "cockpit",
+                    "name": "驾驶舱",
+                    "x": "75%",
+                    "y": "50%",
+                    "context": "玩家目前在驾驶舱内。面前是飞船的控制面板和视野窗外深邃的宇宙。这里是飞船的神经中枢，所有的驾驶和火控操作都在此进行。"
+                },
+                {
+                    "id": "rear_area",
+                    "name": "后部区域",
+                    "x": "30%",
+                    "y": "50%",
+                    "context": "玩家来到了飞船的后部区域。这里引擎轰鸣，管线交错，角落里堆放着一些备用零件和私人物品。这里稍微显得有些拥挤和杂乱。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": "cockpit"
+                },
+                "D1": {
+                    "type": "defense",
+                    "size": "S",
+                    "desc": "装甲槽",
+                    "area": "rear_area"
+                },
+                "A1": {
+                    "type": "core",
+                    "size": "S",
+                    "desc": "核心槽",
+                    "area": "cockpit"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "S",
+                    "desc": "引擎槽",
+                    "area": "rear_area"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "hull_alliance_s": {
+            "name": "联盟巡逻机底盘",
+            "desc": "联盟的高科技结晶，速度快但装甲薄弱，依赖护盾。",
+            "faction": 2,
+            "price": 400,
+            "type": "fighter",
+            "size": "small",
+            "sprite": "alliance_fighter.png",
+            "spriteSize": {
+                "width": 37,
+                "height": 54
+            },
+            "baseHp": 80,
+            "mass": 9,
+            "drag": 0.98,
+            "maxInventory": 40,
+            "droneLaunchCapacity": 1,
+            "areas": [
+                {
+                    "id": "cockpit",
+                    "name": "驾驶舱",
+                    "x": "75%",
+                    "y": "50%",
+                    "context": "玩家目前在驾驶舱内。面前是飞船的控制面板和视野窗外深邃的宇宙。这里是飞船的神经中枢，所有的驾驶和火控操作都在此进行。"
+                },
+                {
+                    "id": "rear_area",
+                    "name": "后部区域",
+                    "x": "40%",
+                    "y": "50%",
+                    "context": "玩家来到了飞船的后部区域。这里引擎轰鸣，管线交错，角落里堆放着一些备用零件和私人物品。这里稍微显得有些拥挤和杂乱。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": "cockpit"
+                },
+                "U1": {
+                    "type": "utility",
+                    "size": "S",
+                    "desc": "通用槽",
+                    "area": "rear_area"
+                },
+                "A1": {
+                    "type": "core",
+                    "size": "S",
+                    "desc": "核心槽",
+                    "area": "cockpit"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "S",
+                    "desc": "引擎槽",
+                    "area": "rear_area"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "hull_scavenger_s": {
+            "name": "拾荒者拼凑底盘",
+            "desc": "用废铁焊接而成的飞船，虽然难看但意外地皮实。",
+            "faction": 3,
+            "price": 200,
+            "type": "fighter",
+            "size": "small",
+            "sprite": "scavenger_fighter.png",
+            "spriteSize": {
+                "width": 57,
+                "height": 41
+            },
+            "baseHp": 120,
+            "mass": 18,
+            "drag": 0.98,
+            "maxInventory": 80,
+            "droneLaunchCapacity": 1,
+            "areas": [
+                {
+                    "id": "cockpit",
+                    "name": "驾驶舱",
+                    "x": "65%",
+                    "y": "50%",
+                    "context": "玩家目前在驾驶舱内。面前是飞船的控制面板和视野窗外深邃的宇宙。这里是飞船的神经中枢，所有的驾驶和火控操作都在此进行。"
+                },
+                {
+                    "id": "rear_area",
+                    "name": "后部区域",
+                    "x": "40%",
+                    "y": "40%",
+                    "context": "玩家来到了飞船的后部区域。这里引擎轰鸣，管线交错，角落里堆放着一些备用零件和私人物品。这里稍微显得有些拥挤和杂乱。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": "cockpit"
+                },
+                "D1": {
+                    "type": "defense",
+                    "size": "S",
+                    "desc": "装甲槽",
+                    "area": "rear_area"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "S",
+                    "desc": "引擎槽",
+                    "area": "rear_area"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "hull_cult_s": {
+            "name": "邪教狂信机底盘",
+            "desc": "为了追求极致火力而牺牲了一切防护的疯狂设计。",
+            "faction": 4,
+            "price": 300,
+            "type": "fighter",
+            "size": "small",
+            "sprite": "cult_fighter.png",
+            "spriteSize": {
+                "width": 38,
+                "height": 27
+            },
+            "baseHp": 60,
+            "mass": 8,
+            "drag": 0.98,
+            "maxInventory": 30,
+            "areas": [
+                {
+                    "id": "cockpit",
+                    "name": "驾驶舱",
+                    "x": "70%",
+                    "y": "50%",
+                    "context": "玩家目前在驾驶舱内。面前是飞船的控制面板和视野窗外深邃的宇宙。这里是飞船的神经中枢，所有的驾驶和火控操作都在此进行。"
+                },
+                {
+                    "id": "rear_area",
+                    "name": "后部区域",
+                    "x": "40%",
+                    "y": "50%",
+                    "context": "玩家来到了飞船的后部区域。这里引擎轰鸣，管线交错，角落里堆放着一些备用零件和私人物品。这里稍微显得有些拥挤和杂乱。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": "cockpit"
+                },
+                "W2": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": "cockpit"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "S",
+                    "desc": "引擎槽",
+                    "area": "rear_area"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "hull_miner_s": {
+            "name": "标准采矿船底盘",
+            "desc": "基于商船底盘改造的专业采矿作业船，拥有更加庞大的货仓。",
+            "faction": 0,
+            "price": 700,
+            "type": "miner",
+            "size": "medium",
+            "sprite": "矿船.png",
+            "spriteSize": {
+                "width": 263,
+                "height": 130
+            },
+            "turretBaseSprite": "empire_turret.png",
+            "turretBaseSize": {
+                "width": 7,
+                "height": 12
+            },
+            "turretBaseOrigin": {
+                "x": 5,
+                "y": 6
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 600,
+            "mass": 80,
+            "drag": 0.98,
+            "maxInventory": 10000,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "舰桥",
+                    "x": "80%",
+                    "y": "50%",
+                    "context": "这里是采矿船的舰桥，宽敞但陈设简单，主要用于导航、通信与指挥采矿作业。"
+                },
+                {
+                    "id": "cargo_hold",
+                    "name": "主货舱",
+                    "x": "50%",
+                    "y": "50%",
+                    "context": "巨大的主货舱，专门用于堆放采集到的各类矿石碎片。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "动力核心所在，轰鸣的引擎为笨重的船体提供推进力。"
+                },
+                {
+                    "id": "turret_base_w1",
+                    "name": "炮塔底座",
+                    "x": "60%",
+                    "y": "50%",
+                    "context": "专门为采矿射线或防御炮塔预留的独立加固平台。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": 51.5,
+                    "y": 15,
+                    "desc": "武器槽",
+                    "area": "turret_base_w1"
+                },
+                "D1": {
+                    "type": "defense",
+                    "size": "M",
+                    "desc": "装甲槽",
+                    "area": "cargo_hold"
+                },
+                "U1": {
+                    "type": "utility",
+                    "size": "S",
+                    "desc": "通用槽",
+                    "area": "bridge"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 5,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽1"
+                },
+                "DR2": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽2"
+                },
+                "DR3": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽3"
+                },
+                "DR4": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽4"
+                },
+                "DR5": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽5"
+                }
+            }
+        },
+        "hull_freighter_s": {
+            "name": "标准远洋货船底盘",
+            "desc": "笨重但可靠的商业运输船，拥有巨大的货舱。",
+            "faction": 0,
+            "price": 600,
+            "type": "freighter",
+            "size": "medium",
+            "sprite": "freighter.png",
+            "spriteSize": {
+                "width": 180,
+                "height": 94
+            },
+            "turretBaseSprite": "empire_turret.png",
+            "turretBaseSize": {
+                "width": 7,
+                "height": 12
+            },
+            "turretBaseOrigin": {
+                "x": 5,
+                "y": 6
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 600,
+            "mass": 80,
+            "drag": 0.98,
+            "maxInventory": 10000,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "舰桥",
+                    "x": "80%",
+                    "y": "50%",
+                    "context": "这里是货船的舰桥，宽敞但陈设简单，主要用于导航和通信。"
+                },
+                {
+                    "id": "cargo_hold",
+                    "name": "主货舱",
+                    "x": "50%",
+                    "y": "50%",
+                    "context": "巨大的主货舱，用于堆放各种货物，装甲板加固了这里的结构。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "动力核心所在，轰鸣的引擎为笨重的船体提供推进力。"
+                },
+                {
+                    "id": "turret_base_w1",
+                    "name": "炮塔底座",
+                    "x": "60%",
+                    "y": "50%",
+                    "context": "专门为防御炮塔预留的独立加固平台，内置了独立的火控线路。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": 0,
+                    "y": 0,
+                    "desc": "武器槽",
+                    "area": "turret_base_w1"
+                },
+                "D1": {
+                    "type": "defense",
+                    "size": "M",
+                    "desc": "装甲槽",
+                    "area": "cargo_hold"
+                },
+                "U1": {
+                    "type": "utility",
+                    "size": "S",
+                    "desc": "通用槽",
+                    "area": "bridge"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "destroyer_empire": {
+            "name": "帝国级驱逐舰",
+            "desc": "帝国舰队的中坚力量，拥有多座旋转炮塔和厚重的装甲。",
+            "faction": 1,
+            "price": 2500,
+            "type": "fighter",
+            "size": "large",
+            "sprite": "empire_destroyer.png",
+            "spriteSize": {
+                "width": 98,
+                "height": 37
+            },
+            "turretBaseSprite": "empire_turret.png",
+            "turretBaseSize": {
+                "width": 7,
+                "height": 12
+            },
+            "turretBaseOrigin": {
+                "x": 3,
+                "y": 6
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 500,
+            "mass": 150,
+            "drag": 0.98,
+            "maxInventory": 200,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "指令舰桥",
+                    "x": "80%",
+                    "y": "50%",
+                    "context": "帝国驱逐舰的指令中枢，两侧装有固定武器火控。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "动力室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "重重装甲保护下的动力室，为庞大的舰体提供能量。"
+                },
+                {
+                    "id": "turret_base_t1",
+                    "name": "T1炮塔底座",
+                    "x": "40%",
+                    "y": "30%",
+                    "context": "重型旋转炮塔的安装平台，包含弹药升降机和独立回旋电机。"
+                },
+                {
+                    "id": "turret_base_t2",
+                    "name": "T2炮塔底座",
+                    "x": "40%",
+                    "y": "70%",
+                    "context": "另一侧的重型旋转炮塔底座，能够提供全方位的火力覆盖。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "x": 35,
+                    "y": -10.5,
+                    "desc": "武器槽",
+                    "area": "bridge"
+                },
+                "W2": {
+                    "type": "weapon",
+                    "size": "S",
+                    "x": 35,
+                    "y": 10.5,
+                    "desc": "武器槽",
+                    "area": "bridge"
+                },
+                "T1": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": -41.3,
+                    "y": -3.15,
+                    "desc": "武器槽",
+                    "area": "turret_base_t1"
+                },
+                "T2": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": -32.9,
+                    "y": 3.15,
+                    "desc": "武器槽",
+                    "area": "turret_base_t2"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "destroyer_alliance": {
+            "name": "联邦级驱逐舰",
+            "desc": "自由联邦的主力战舰，具备卓越的火力覆盖面积。",
+            "faction": 2,
+            "price": 2600,
+            "type": "fighter",
+            "size": "large",
+            "sprite": "联邦驱逐舰.png",
+            "spriteSize": {
+                "width": 90,
+                "height": 46
+            },
+            "turretBaseSprite": "自由联邦基础炮台.png",
+            "turretBaseSize": {
+                "width": 9,
+                "height": 10
+            },
+            "turretBaseOrigin": {
+                "x": 5,
+                "y": 6
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 400,
+            "mass": 120,
+            "drag": 0.98,
+            "maxInventory": 180,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "战术舰桥",
+                    "x": "75%",
+                    "y": "50%",
+                    "context": "充满全息投影的联邦高科技舰桥。"
+                },
+                {
+                    "id": "shield_room",
+                    "name": "偏导舱区",
+                    "x": "50%",
+                    "y": "50%",
+                    "context": "联邦星舰的生存核心，集中了大量护盾发生器和通用模块。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "高能引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "散发着蓝光的引擎室，动力澎湃。"
+                },
+                {
+                    "id": "turret_base_t1",
+                    "name": "T1炮塔底座",
+                    "x": "50%",
+                    "y": "20%",
+                    "context": "左舷速射炮塔的旋转基座。"
+                },
+                {
+                    "id": "turret_base_t2",
+                    "name": "T2炮塔底座",
+                    "x": "50%",
+                    "y": "80%",
+                    "context": "右舷速射炮塔的旋转基座。"
+                }
+            ],
+            "slots": {
+                "T1": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": 1.25,
+                    "y": -11.5,
+                    "desc": "武器槽",
+                    "area": "turret_base_t1"
+                },
+                "T2": {
+                    "type": "weapon",
+                    "size": "M",
+                    "isTurret": true,
+                    "x": 1.25,
+                    "y": 11.5,
+                    "desc": "武器槽",
+                    "area": "turret_base_t2"
+                },
+                "U1": {
+                    "type": "utility",
+                    "size": "M",
+                    "desc": "通用槽",
+                    "area": "shield_room"
+                },
+                "D1": {
+                    "type": "defense",
+                    "size": "M",
+                    "desc": "装甲槽",
+                    "area": "shield_room"
+                },
+                "D2": {
+                    "type": "defense",
+                    "size": "M",
+                    "desc": "装甲槽",
+                    "area": "shield_room"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "destroyer_pirate": {
+            "name": "海盗驱逐舰",
+            "desc": "海盗阵营的驱逐舰，牺牲装甲换取了高机动性。",
+            "faction": 3,
+            "price": 2300,
+            "type": "fighter",
+            "size": "large",
+            "sprite": "海盗驱逐舰52,50.png",
+            "spriteSize": {
+                "width": 136,
+                "height": 61
+            },
+            "turretBaseSprite": "海盗基础炮台.png",
+            "turretBaseSize": {
+                "width": 14,
+                "height": 16
+            },
+            "turretBaseOrigin": {
+                "x": 9,
+                "y": 9
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 380,
+            "mass": 90,
+            "drag": 0.98,
+            "maxInventory": 250,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "突击舰桥",
+                    "x": "70%",
+                    "y": "50%",
+                    "context": "布满拼接痕迹的海盗舰桥，舰首直接焊接着固定主炮。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "过载引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "海盗为了追求速度，将引擎室改装得极度危险而狂暴。"
+                },
+                {
+                    "id": "turret_base_t1",
+                    "name": "炮塔底座",
+                    "x": "40%",
+                    "y": "80%",
+                    "context": "外挂的独立炮塔底座，为海盗提供侧翼火力。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "M",
+                    "x": 50,
+                    "y": 0,
+                    "desc": "武器槽",
+                    "area": "bridge"
+                },
+                "T1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": -16,
+                    "y": 19.5,
+                    "desc": "武器槽",
+                    "area": "turret_base_t1"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "destroyer_cult": {
+            "name": "虚空教团驱逐舰",
+            "desc": "虚空教团的大型战舰，以牺牲防御为代价装备了恐怖的L型主炮。",
+            "faction": 4,
+            "price": 2800,
+            "type": "fighter",
+            "size": "large",
+            "sprite": "虚空教团驱逐舰.png",
+            "spriteSize": {
+                "width": 122,
+                "height": 63
+            },
+            "baseHp": 300,
+            "mass": 100,
+            "drag": 0.98,
+            "maxInventory": 150,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "信徒祈祷室",
+                    "x": "50%",
+                    "y": "50%",
+                    "context": "虚空教团的舰桥，与其说是控制室，更像是狂热的仪式现场。"
+                },
+                {
+                    "id": "main_gun_room",
+                    "name": "主炮阵列",
+                    "x": "80%",
+                    "y": "50%",
+                    "context": "舰首贯穿整个船体前部的巨大能量管线，专门为了支撑恐怖的L型武器。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "幽能引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "散发着紫光的怪异推进室。"
+                }
+            ],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "L",
+                    "x": 70,
+                    "y": 0,
+                    "desc": "船头L槽主炮",
+                    "area": "main_gun_room"
+                },
+                "W2": {
+                    "type": "weapon",
+                    "size": "S",
+                    "x": -20,
+                    "y": -20,
+                    "desc": "武器槽",
+                    "area": "bridge"
+                },
+                "W3": {
+                    "type": "weapon",
+                    "size": "S",
+                    "x": -20,
+                    "y": 20,
+                    "desc": "武器槽",
+                    "area": "bridge"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "M",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "cruiser_cult": {
+            "name": "虚空巡洋舰",
+            "desc": "虚空教团的大型巡洋舰，拥有数量众多的炮台阵列，火力极其凶猛。",
+            "faction": 4,
+            "price": 6000,
+            "type": "fighter",
+            "size": "XL",
+            "sprite": "虚空巡洋舰.png",
+            "spriteSize": {
+                "width": 399,
+                "height": 211
+            },
+            "turretBaseSprite": "虚空炮台 5 12.png",
+            "turretBaseSize": {
+                "width": 9,
+                "height": 17
+            },
+            "turretBaseOrigin": {
+                "x": 5,
+                "y": 12
+            },
+            "turretBaseRotOffset": 90,
+            "baseHp": 800,
+            "mass": 300,
+            "drag": 0.98,
+            "maxInventory": 400,
+            "areas": [
+                {
+                    "id": "bridge",
+                    "name": "巡洋舰舰桥",
+                    "x": "50%",
+                    "y": "50%",
+                    "context": "庞大的巡洋舰指挥中心。"
+                },
+                {
+                    "id": "turret_array",
+                    "name": "炮台阵列区",
+                    "x": "60%",
+                    "y": "50%",
+                    "context": "密布着大量炮台的阵列区域。"
+                },
+                {
+                    "id": "engine_room",
+                    "name": "巡洋舰引擎室",
+                    "x": "20%",
+                    "y": "50%",
+                    "context": "提供巨大推力的重型幽能引擎室。"
+                }
+            ],
+            "slots": {
+                "T1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 132.5,
+                    "y": -83.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T2": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 92.5,
+                    "y": 19.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T3": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 132.5,
+                    "y": 84.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T4": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 144.5,
+                    "y": -83.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T5": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 104.5,
+                    "y": 19.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T6": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 144.5,
+                    "y": 84.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T7": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 156.5,
+                    "y": -83.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T8": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 116.5,
+                    "y": 19.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T9": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 156.5,
+                    "y": 84.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T10": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 168.5,
+                    "y": -83.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T11": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 128.5,
+                    "y": 19.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T12": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 118.5,
+                    "y": 84.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "T13": {
+                    "type": "weapon",
+                    "size": "S",
+                    "isTurret": true,
+                    "x": 140.5,
+                    "y": 19.5,
+                    "desc": "炮台槽",
+                    "area": "turret_array"
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "L",
+                    "desc": "引擎槽",
+                    "area": "engine_room"
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        },
+        "drone_basic": {
+            "name": "无人机底盘",
+            "desc": "小巧的无人机底盘，没有驾驶舱等内构，仅配备了武器和引擎。",
+            "faction": 0,
+            "price": 100,
+            "type": "drone",
+            "droneType": "ATTACK",
+            "size": "small",
+            "sprite": "无人机.png",
+            "spriteSize": {
+                "width": 15,
+                "height": 11
+            },
+            "baseHp": 30,
+            "mass": 2,
+            "drag": 0.95,
+            "maxInventory": 50,
+            "areas": [],
+            "slots": {
+                "W1": {
+                    "type": "weapon",
+                    "size": "S",
+                    "desc": "武器槽",
+                    "area": ""
+                },
+                "E1": {
+                    "type": "engine",
+                    "size": "S",
+                    "desc": "引擎槽",
+                    "area": ""
+                }
+            },
+            "droneSlotCount": 1,
+            "droneSlots": {
+                "DR1": {
+                    "type": "drone",
+                    "size": "S",
+                    "desc": "无人机槽"
+                }
+            }
+        }
+    },
+    "COMPONENTS": {
+        "laser_mk1": {
+            "type": "weapon",
+            "subType": "laser",
+            "stats": {
+                "attack": 15,
+                "range": 200,
+                "fireRate": 1,
+                "energyCost": 0,
+                "color": "#ff0000"
+            },
+            "meta": {
+                "name": "初级红外激光",
+                "desc": "廉价且可靠的自卫武器，发射持续的红外光束。",
+                "faction": 0,
+                "price": 100,
+                "size": "S",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "kinetic_artillery": {
+            "type": "weapon",
+            "subType": "kinetic",
+            "stats": {
+                "attack": 45,
+                "range": 400,
+                "fireRate": 2.5,
+                "projectileSpeed": 600,
+                "color": "#ffff00"
+            },
+            "meta": {
+                "name": "帝国重型火炮",
+                "desc": "大口径动能火炮，射速慢但单发伤害极高。",
+                "faction": 1,
+                "price": 500,
+                "size": "M",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "kinetic_artillery_alliance": {
+            "type": "weapon",
+            "subType": "kinetic",
+            "stats": {
+                "attack": 30,
+                "range": 350,
+                "fireRate": 1.2,
+                "projectileSpeed": 700,
+                "color": "#ffff00"
+            },
+            "meta": {
+                "name": "联邦速射火炮",
+                "desc": "高射速连发火炮，以射速弥补单发伤害的不足。",
+                "faction": 2,
+                "price": 550,
+                "size": "M",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "kinetic_cannon": {
+            "type": "weapon",
+            "subType": "kinetic",
+            "stats": {
+                "attack": 25,
+                "range": 150,
+                "fireRate": 1.5,
+                "projectileSpeed": 500,
+                "color": "#ffff00"
+            },
+            "meta": {
+                "name": "拾荒者土制火炮",
+                "desc": "虽然精度感人，但近距离糊脸威力尚可。",
+                "faction": 3,
+                "price": 120,
+                "size": "S",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "plasma_beam": {
+            "type": "weapon",
+            "subType": "laser",
+            "stats": {
+                "attack": 8,
+                "range": 250,
+                "fireRate": 0.5,
+                "energyCost": 0,
+                "color": "#00ff00"
+            },
+            "meta": {
+                "name": "邪教等离子射线",
+                "desc": "高频发射的不稳定等离子束，也就是俗称的滋水枪。",
+                "faction": 4,
+                "price": 200,
+                "size": "S",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "void_annihilator_l": {
+            "type": "weapon",
+            "subType": "laser",
+            "stats": {
+                "attack": 120,
+                "range": 600,
+                "fireRate": 4,
+                "energyCost": 0,
+                "color": "#8a2be2"
+            },
+            "meta": {
+                "name": "虚空湮灭炮",
+                "desc": "虚空教团的核心科技，威力极为恐怖的超重型定向能武器。",
+                "faction": 4,
+                "price": 1500,
+                "size": "L",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "armor_titanium": {
+            "type": "defense",
+            "subType": "armor",
+            "stats": {
+                "hpBonus": 50,
+                "weight": 0
+            },
+            "meta": {
+                "name": "钛合金装甲板",
+                "desc": "轻便坚固的军用级合金板。",
+                "faction": 0,
+                "price": 150,
+                "size": "S",
+                "sprite": "icon_armor"
+            }
+        },
+        "armor_composite": {
+            "type": "defense",
+            "subType": "armor",
+            "stats": {
+                "hpBonus": 200,
+                "speedPenalty": -10
+            },
+            "meta": {
+                "name": "复合重装甲",
+                "desc": "多层复合材料堆叠，极硬但非常沉重。",
+                "faction": 1,
+                "price": 350,
+                "size": "M",
+                "sprite": "icon_armor_heavy"
+            }
+        },
+        "armor_regen": {
+            "type": "defense",
+            "subType": "armor",
+            "stats": {
+                "hpBonus": 100,
+                "hpRegen": 5
+            },
+            "meta": {
+                "name": "自修护装甲",
+                "desc": "内置纳米机器人的复合装甲，能够缓慢修复船体损伤。",
+                "faction": 0,
+                "price": 450,
+                "size": "M",
+                "sprite": "icon_armor_regen"
+            }
+        },
+        "shield_basic": {
+            "type": "defense",
+            "subType": "shield",
+            "stats": {
+                "shieldHp": 30,
+                "regenRate": 5
+            },
+            "meta": {
+                "name": "民用偏导护盾",
+                "desc": "能够吸收少量能量伤害的力场发生器。",
+                "faction": 2,
+                "price": 300,
+                "size": "S",
+                "sprite": "icon_shield"
+            }
+        },
+        "ai_basic": {
+            "type": "core",
+            "subType": "fire_control",
+            "stats": {
+                "fireRateMultiplier": 1
+            },
+            "meta": {
+                "name": "基础火控系统",
+                "desc": "标配的辅助瞄准计算机。",
+                "faction": 0,
+                "price": 100,
+                "size": "S",
+                "sprite": "icon_cpu"
+            }
+        },
+        "ai_advanced": {
+            "type": "core",
+            "subType": "fire_control",
+            "stats": {
+                "fireRateMultiplier": 0.8
+            },
+            "meta": {
+                "name": "高级预判AI",
+                "desc": "能够预判目标轨迹的先进火控AI。",
+                "faction": 2,
+                "price": 400,
+                "size": "M",
+                "sprite": "icon_cpu_adv"
+            }
+        },
+        "cargo_expander": {
+            "type": "utility",
+            "subType": "cargo",
+            "stats": {
+                "inventoryBonus": 5000
+            },
+            "meta": {
+                "name": "货仓外挂模块",
+                "desc": "虽然丑了点，但能多装不少货。",
+                "faction": 0,
+                "price": 150,
+                "size": "S",
+                "sprite": "icon_cargo"
+            }
+        },
+        "engine_basic_s": {
+            "type": "engine",
+            "subType": "thruster",
+            "stats": {
+                "thrust": 12000,
+                "turnThrust": 18000
+            },
+            "meta": {
+                "name": "民用级小型引擎",
+                "desc": "常见的化学染料推进器，推力平庸，胜在便宜。",
+                "faction": 0,
+                "price": 100,
+                "size": "S",
+                "sprite": "icon_engine"
+            }
+        },
+        "engine_military_s": {
+            "type": "engine",
+            "subType": "thruster",
+            "stats": {
+                "thrust": 20000,
+                "turnThrust": 28000
+            },
+            "meta": {
+                "name": "军用级矢量引擎",
+                "desc": "高功率的矢量离子引擎，能为战机提供惊人的加速度与转向灵活性。",
+                "faction": 1,
+                "price": 350,
+                "size": "S",
+                "sprite": "icon_engine"
+            }
+        },
+        "engine_heavy_m": {
+            "type": "engine",
+            "subType": "thruster",
+            "stats": {
+                "thrust": 40000,
+                "turnThrust": 35000
+            },
+            "meta": {
+                "name": "战舰级聚变推进器",
+                "desc": "重型战舰与远洋货船的标配动力，推力极大，但难以驱动笨重船体快速转向。",
+                "faction": 0,
+                "price": 800,
+                "size": "M",
+                "sprite": "icon_engine"
+            }
+        },
+        "engine_alliance_m": {
+            "type": "engine",
+            "subType": "thruster",
+            "stats": {
+                "thrust": 55000,
+                "turnThrust": 45000
+            },
+            "meta": {
+                "name": "联邦超载引擎组",
+                "desc": "联邦科技结晶，提供恐怖推力的同时也带来极高的能源负荷。",
+                "faction": 2,
+                "price": 1200,
+                "size": "M",
+                "sprite": "icon_engine"
+            }
+        },
+        "engine_drone_s": {
+            "type": "engine",
+            "subType": "thruster",
+            "stats": {
+                "thrust": 2000,
+                "turnThrust": 2800
+            },
+            "meta": {
+                "name": "无人机微型引擎",
+                "desc": "推力仅有普通战机十分之一的微型矢量引擎，专门为轻量化的无人机设计。",
+                "faction": 0,
+                "price": 50,
+                "size": "S",
+                "sprite": "icon_engine"
+            }
+        },
+        "builder_beam_mk1": {
+            "type": "weapon",
+            "subType": "builder",
+            "isBuilderBeam": true,
+            "stats": {
+                "attack": 0,
+                "buildSpeed": 2,
+                "range": 200,
+                "fireRate": 0.5,
+                "energyCost": 0,
+                "color": "#00ff00"
+            },
+            "meta": {
+                "name": "工程修理射线",
+                "desc": "不具备伤害能力，但可以向虚影投射纳米材料，加速建造或修理进度。",
+                "faction": 0,
+                "price": 150,
+                "size": "S",
+                "sprite": "none",
+                "canToggle": true
+            }
+        },
+        "miner_beam_mk1": {
+            "type": "weapon",
+            "subType": "laser",
+            "stats": {
+                "attack": 0,
+                "miningYield": 100,
+                "range": 200,
+                "fireRate": 0.5,
+                "energyCost": 0,
+                "color": "#ffff00"
+            },
+            "meta": {
+                "name": "矿物捕获网",
+                "desc": "专门用于切割小行星并捕获矿物碎片的采矿射线。",
+                "faction": 0,
+                "price": 150,
+                "size": "S",
+                "sprite": "none",
+                "canToggle": true
+            }
+        }
+    }
+}
