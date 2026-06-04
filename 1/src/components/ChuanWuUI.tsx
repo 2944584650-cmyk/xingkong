@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import EquipmentData from '../../json/EquipmentData.json';
+import ItemData from '../../json/ItemData.json';
 import { BuildingManager } from '../managers/BuildingManager';
 import { EventBus } from '../utils/EventBus';
 
@@ -23,7 +24,9 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
 
     // 槽位与装备配置
     const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+    const [selectedDroneSlotId, setSelectedDroneSlotId] = useState<string | null>(null);
     const [equippedComponents, setEquippedComponents] = useState<Record<string, string>>({});
+    const [equippedDrones, setEquippedDrones] = useState<Record<string, string>>({});
 
     const totalCost = React.useMemo(() => {
         let cost = selectedHullData.price || 0;
@@ -32,8 +35,14 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
             const comp = EquipmentData.COMPONENTS[compId];
             if (comp) cost += comp.meta.price || 0;
         });
+
+        Object.values(equippedDrones).forEach(droneId => {
+            const item = (ItemData.ITEMS as any)[droneId];
+            if (item) cost += item.basePrice || 0;
+        });
+
         return cost;
-    }, [selectedHullData, equippedComponents]);
+    }, [selectedHullData, equippedComponents, equippedDrones]);
 
     const handleDragStart = (e: React.PointerEvent) => {
         setIsDragging(true);
@@ -110,6 +119,7 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
             sourceModuleId: sourceModuleUid, // 关键：绑定具体建筑的唯一实例 ID
             hullId: selectedHullKey,
             loadout: equippedComponents, // ShipManager 里叫 loadout，这里映射一下
+            droneEquips: equippedDrones, // 将选择的无人机数据传给底层进行实体组装
             factionId: 0, // 假设船厂生成的归属于玩家
             ownerId: 'player',
             type: 'fighter', // 默认占位，ShipManager.recalculateStats 会修复它
@@ -268,7 +278,9 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                                                 setSelectedHullKey(key);
                                                 setShowHullSelect(false);
                                                 setSelectedSlotId(null);
+                                                setSelectedDroneSlotId(null);
                                                 setEquippedComponents({});
+                                                setEquippedDrones({});
                                             }}
                                             style={{
                                                 padding: '10px 15px',
@@ -299,9 +311,10 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                         borderBottom: '1px solid rgba(0,255,255,0.3)',
                         paddingBottom: '20px'
                     }}>
-                        <h3 style={{ margin: '0 0 10px 0', color: '#aaaaff', flexShrink: 0 }}>槽位配置</h3>
-                        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
-                            {Object.entries(selectedHullData.slots || {}).map(([slotId, slotInfo]: [string, any]) => {
+                        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', paddingRight: '5px' }}>
+                            <h3 style={{ margin: '0 0 10px 0', color: '#aaaaff', flexShrink: 0 }}>槽位配置</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {Object.entries(selectedHullData.slots || {}).map(([slotId, slotInfo]: [string, any]) => {
                                 const equippedId = equippedComponents[slotId];
                                 // @ts-ignore
                                 const equippedComp = equippedId ? EquipmentData.COMPONENTS[equippedId] : null;
@@ -310,7 +323,10 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                                 return (
                                     <div 
                                         key={slotId} 
-                                        onClick={() => setSelectedSlotId(slotId)}
+                                        onClick={() => {
+                                            setSelectedSlotId(slotId);
+                                            setSelectedDroneSlotId(null);
+                                        }}
                                         style={{ 
                                             display: 'flex', 
                                             flexDirection: 'column',
@@ -365,10 +381,80 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                                             }}>
                                                 {equippedComp ? `◆ ${equippedComp.meta.name}` : '未装备任何模块'}
                                             </span>
+                                            </div>
                                         </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* 无人机槽位 */}
+                            {selectedHullData.droneSlots && Object.keys(selectedHullData.droneSlots).length > 0 && (
+                                <>
+                                    <h3 style={{ margin: '15px 0 10px 0', color: '#00ffcc', flexShrink: 0 }}>无人机配置</h3>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {Object.entries(selectedHullData.droneSlots).map(([slotId, slotInfo]: [string, any]) => {
+                                            const equippedId = equippedDrones[slotId];
+                                            const equippedComp = equippedId ? (ItemData.ITEMS as any)[equippedId] : null;
+                                            const isSelected = selectedDroneSlotId === slotId;
+                                            
+                                            return (
+                                                <div 
+                                                    key={slotId} 
+                                                    onClick={() => {
+                                                        setSelectedDroneSlotId(slotId);
+                                                        setSelectedSlotId(null); // 取消选择装备槽
+                                                    }}
+                                                    style={{ 
+                                                        display: 'flex', 
+                                                        flexDirection: 'column',
+                                                        padding: '10px',
+                                                        backgroundColor: isSelected ? 'rgba(0, 255, 204, 0.15)' : 'rgba(0, 0, 0, 0.4)',
+                                                        border: isSelected ? '1px solid #00ffcc' : '1px dashed rgba(0, 255, 204, 0.2)',
+                                                        borderRadius: '6px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        boxShadow: isSelected ? '0 0 10px rgba(0, 255, 204, 0.2)' : 'none'
+                                                    }}
+                                                    onMouseOver={e => {
+                                                        if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(0, 255, 204, 0.05)';
+                                                    }}
+                                                    onMouseOut={e => {
+                                                        if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                                                        <span style={{ 
+                                                            fontWeight: 'bold', 
+                                                            color: isSelected ? '#00ffcc' : '#fff',
+                                                            fontSize: '15px'
+                                                        }}>
+                                                            {slotId} - {slotInfo.desc || '无人机'}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div style={{ 
+                                                        display: 'flex', 
+                                                        alignItems: 'center',
+                                                        marginTop: '4px',
+                                                        padding: '6px',
+                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                        borderRadius: '4px',
+                                                        borderLeft: `2px solid ${equippedComp ? '#00ffcc' : '#444'}`
+                                                    }}>
+                                                        <span style={{ 
+                                                            fontSize: '14px', 
+                                                            color: equippedComp ? '#00ffcc' : '#666',
+                                                            fontStyle: equippedComp ? 'normal' : 'italic'
+                                                        }}>
+                                                            {equippedComp ? `◆ ${equippedComp.name}` : '未装备任何无人机'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                );
-                            })}
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -459,17 +545,69 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                         display: 'flex',
                         flexDirection: 'column',
                         borderBottom: '1px solid rgba(0,255,255,0.3)',
-                        paddingBottom: '20px'
+                        paddingBottom: '20px',
+                        minHeight: 0 // 允许自身收缩并让内部出现滚动条
                     }}>
                         <h3 style={{ margin: '0 0 10px 0', color: '#aaaaff' }}>可选装备</h3>
                         
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto', paddingRight: '5px' }}>
                             {(() => {
-                                if (!selectedSlotId) {
+                                if (!selectedSlotId && !selectedDroneSlotId) {
                                     return <div style={{ color: '#aaa', textAlign: 'center', marginTop: '20px' }}>请先在左侧选择一个槽位</div>;
                                 }
 
-                                const slotData = selectedHullData.slots[selectedSlotId];
+                                if (selectedDroneSlotId) {
+                                    const availableDrones = Object.entries(ItemData.ITEMS).filter(([id, item]: [string, any]) => item.type === 'drone');
+
+                                    if (availableDrones.length === 0) {
+                                        return <div style={{ color: '#aaa', textAlign: 'center', marginTop: '20px' }}>无合适无人机</div>;
+                                    }
+
+                                    return (
+                                        <>
+                                            <div 
+                                                onClick={() => {
+                                                    const newEq = { ...equippedDrones };
+                                                    delete newEq[selectedDroneSlotId];
+                                                    setEquippedDrones(newEq);
+                                                }}
+                                                style={{
+                                                    display: 'flex', justifyContent: 'center', background: 'none', padding: '10px', borderRadius: '4px', cursor: 'pointer', border: !equippedDrones[selectedDroneSlotId] ? '1px solid #ff3333' : '1px solid rgba(255,51,51,0.3)',
+                                                    color: '#ff3333'
+                                                }}
+                                            >
+                                                <span>卸下当前无人机</span>
+                                            </div>
+                                            
+                                            {availableDrones.map(([droneId, drone]: [string, any]) => (
+                                                <div 
+                                                    key={droneId}
+                                                    onClick={() => {
+                                                        setEquippedDrones(prev => ({
+                                                            ...prev,
+                                                            [selectedDroneSlotId]: droneId
+                                                        }));
+                                                    }}
+                                                    style={{ 
+                                                        display: 'flex', justifyContent: 'space-between', background: equippedDrones[selectedDroneSlotId] === droneId ? 'rgba(0,255,204,0.2)' : 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '4px', cursor: 'pointer', 
+                                                        border: equippedDrones[selectedDroneSlotId] === droneId ? '1px solid #00ffcc' : '1px solid rgba(0,255,204,0.3)',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <span style={{ color: equippedDrones[selectedDroneSlotId] === droneId ? '#00ffcc' : '#fff' }}>{drone.name}</span>
+                                                        <span style={{ fontSize: '12px', color: '#aaa' }}>{drone.basePrice} 星币</span>
+                                                    </div>
+                                                    <span style={{ fontSize: '12px', background: '#000', border: '1px solid #00ffcc', color: '#00ffcc', padding: '2px 6px', borderRadius: '4px', height: 'fit-content' }}>
+                                                        无人机
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </>
+                                    );
+                                }
+
+                                const slotData = selectedHullData.slots[selectedSlotId!];
                                 
                                 // 定义槽位大小级别，小数值表示槽位更小
                                 const sizeRank: Record<string, number> = {
@@ -547,7 +685,9 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
                         paddingTop: '20px',
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'space-between'
+                        justifyContent: 'space-between',
+                        minHeight: '150px', // 防止被上方列表挤压
+                        flexShrink: 0 // 绝对不缩小，保护按钮
                     }}>
                         {/* 建造成本 */}
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '5px', marginBottom: '15px' }}>

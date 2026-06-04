@@ -250,6 +250,69 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
                         <div style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>无公开装配信息</div>
                     )}
                     
+                    {/* 无人机配置 */}
+                    {hullDef && hullDef.droneSlots && Object.keys(hullDef.droneSlots).length > 0 && !shipData?.isStationVirtualShip && (
+                        <div style={{ 
+                            backgroundColor: 'rgba(0, 255, 204, 0.05)', 
+                            border: '1px solid rgba(0, 255, 204, 0.2)', 
+                            borderRadius: '6px', 
+                            padding: '10px',
+                            marginTop: '15px'
+                        }}>
+                            <h5 style={{ margin: '0 0 10px 0', color: '#00ffcc', borderBottom: '1px solid rgba(0,255,204,0.2)', paddingBottom: '5px' }}>
+                                无人机配置
+                            </h5>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {Object.entries(hullDef.droneSlots).map(([slotId, slotDef]: [string, any]) => {
+                                    const droneEquips = shipData?.droneEquips || shipData?.shipRef?.droneEquips || {};
+                                    const droneStates = shipData?.droneStates || shipData?.shipRef?.droneStates || {};
+                                    const equippedItem = droneEquips[slotId];
+                                    const currentState = droneStates[slotId] || 'IDLE';
+
+                                    let stateColor = '#666';
+                                    let stateText = '待命中';
+                                    if (currentState === 'WORKING') { stateColor = '#ff9900'; stateText = '出击中'; }
+                                    else if (currentState === 'RETURNING') { stateColor = '#aaa'; stateText = '返航中'; }
+
+                                    let itemName = '空';
+                                    if (equippedItem) {
+                                        const def = (ItemData.ITEMS as any)[equippedItem];
+                                        if (def) itemName = def.name;
+                                        else itemName = getComponentName(equippedItem);
+                                    }
+
+                                    return (
+                                        <div key={slotId} style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                                            padding: '8px 12px',
+                                            borderRadius: '4px',
+                                            border: equippedItem ? '1px solid rgba(0, 255, 204, 0.3)' : '1px dashed rgba(255, 255, 255, 0.2)'
+                                        }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                    <div style={{ color: '#fff', fontWeight: 'bold' }}>{slotId} - {slotDef.desc || '无人机槽'}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div style={{ color: equippedItem ? '#00ffaa' : '#666', fontWeight: 'bold' }}>
+                                                            {itemName}
+                                                        </div>
+                                                        {equippedItem && (
+                                                            <div style={{ fontSize: '12px', color: stateColor, padding: '2px 6px', border: `1px solid ${stateColor}`, borderRadius: '3px' }}>
+                                                                {stateText}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* 显示未分配区域的槽位 (容错处理) */}
                     {hullDef && Object.entries(hullDef.slots || {}).filter(([_, slotDef]: [string, any]) => !slotDef.area).length > 0 && (
                         <div style={{ 

@@ -166,8 +166,19 @@ export class Base extends Phaser.Scene {
         // 初始化空间站建造系统
         BuildingManager.load();
 
+        // 初始化库存系统
+        if (typeof window !== 'undefined' && (window as any).InventoryManager) {
+            (window as any).InventoryManager.load();
+        }
+
         // [New UI] 触发进入游戏的全局事件，让 React 显示主 UI
         EventBus.dispatchEvent(new CustomEvent('game_started'));
+        
+        // 触发一次船只状态更新，确保 UI 层 (如 WuRenJiPanel) 能在所有管理器加载完毕后拉取到正确的数据
+        setTimeout(() => {
+            document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
+            document.dispatchEvent(new Event('INVENTORY_CHANGED')); // 顺便触发一下仓库刷新
+        }, 200);
 
         // 监听全局鼠标移动，用于飞船自动转向（防止 DOM 遮挡导致 Phaser 收不到事件）
         this.sysMouseX = window.innerWidth / 2;
@@ -398,6 +409,39 @@ export class Base extends Phaser.Scene {
         EventBus.addEventListener(GameEvents.CMD_ATTACK, this._uiCommandHandler);
         EventBus.addEventListener(GameEvents.CMD_DOCK, this._uiCommandHandler);
 
+        // [新增] 监听采矿右键菜单指令
+        this._cmdMineHandler = (e: any) => {
+            const detail = e.detail;
+            if (!this.selectedUnitIds || this.selectedUnitIds.length === 0) return;
+            
+            const pd = PlayerManager.getStats();
+            let hasAssigned = false;
+
+            this.selectedUnitIds.forEach(unitId => {
+                const targetShip = ShipManager.getShipById(unitId);
+                if (!targetShip) return;
+
+                if (pd.ownedShips && pd.ownedShips.some((s: any) => s.id === unitId) && unitId !== pd.playerShipId) {
+                    import('../managers/ship/ShipDecision.js').then(module => {
+                        const order = {
+                            type: 'MINE',
+                            payload: { targetSector: targetShip.location?.sector || localStorage.getItem('current_sector') }
+                        };
+                        module.ShipDecision.assignMacroOrder(targetShip, order);
+                        // console.log(`【DEBUG】下达采矿指令成功: ${targetShip.name} 将前往星区 ${order.payload.targetSector} 采矿`);
+                        // console.log(`【DEBUG】飞船当前 orderQueue:`, targetShip.orderQueue);
+                    });
+                    hasAssigned = true;
+                }
+            });
+
+            if (hasAssigned) {
+                this.showRTSFeedback(null, detail.x, detail.y, '#00ffff', '开始采矿');
+                EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff;">[战术] 指令已发送：指定单位前往小行星带执行采矿作业。</div>` }));
+            }
+        };
+        EventBus.addEventListener(GameEvents.CMD_MINE, this._cmdMineHandler);
+
         // [新增] 监听停靠右键菜单指令
         this._cmdDockHandler = (e: any) => {
             const detail = e.detail;
@@ -438,7 +482,7 @@ export class Base extends Phaser.Scene {
                 }
             });
         };
-        document.addEventListener('CMD_DOCK', this._cmdDockHandler);
+        EventBus.addEventListener(GameEvents.CMD_DOCK, this._cmdDockHandler);
 
         // 监听作弊菜单强制注入的死敌记忆
         this._cheatMemoryInjectHandler = (e) => {
@@ -608,14 +652,18 @@ export class Base extends Phaser.Scene {
                     document.removeEventListener('ui_set_nav_target', this._navTargetHandler);
                     this._navTargetHandler = null;
                 }
-            if (this._uiCommandHandler) {
-                EventBus.removeEventListener(GameEvents.CMD_MOVE, this._uiCommandHandler);
-                EventBus.removeEventListener(GameEvents.CMD_ATTACK, this._uiCommandHandler);
-                EventBus.removeEventListener(GameEvents.CMD_DOCK, this._uiCommandHandler);
-                this._uiCommandHandler = null;
-            }
+                if (this._uiCommandHandler) {
+                    EventBus.removeEventListener(GameEvents.CMD_MOVE, this._uiCommandHandler);
+                    EventBus.removeEventListener(GameEvents.CMD_ATTACK, this._uiCommandHandler);
+                    EventBus.removeEventListener(GameEvents.CMD_DOCK, this._uiCommandHandler);
+                    this._uiCommandHandler = null;
+                }
+                if (this._cmdMineHandler) {
+                    EventBus.removeEventListener(GameEvents.CMD_MINE, this._cmdMineHandler);
+                    this._cmdMineHandler = null;
+                }
                 if (this._cmdDockHandler) {
-                    document.removeEventListener('CMD_DOCK', this._cmdDockHandler);
+                    EventBus.removeEventListener(GameEvents.CMD_DOCK, this._cmdDockHandler);
                     this._cmdDockHandler = null;
                 }
                 if (this._cheatMemoryInjectHandler) {

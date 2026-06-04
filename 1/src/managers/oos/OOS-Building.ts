@@ -50,6 +50,7 @@ export function updateBuildingOOS(worldState: any, dt: number) {
                             factionId: macroOrder.factionId,
                             ownerId: macroOrder.factionId,
                             loadout: macroOrder.payload.loadout || {},
+                            droneEquips: macroOrder.payload.droneEquips || {}, // 透传无人机配置
                             type: macroOrder.payload.hullId.includes('destroyer') ? 'destroyer' : 'fighter'
                         };
                     }
@@ -97,6 +98,7 @@ export function updateBuildingOOS(worldState: any, dt: number) {
                         name: myChild.name || '新造舰船',
                         hullId: myChild.hullId,
                         loadout: myChild.loadout || {},
+                        droneEquips: myChild.droneEquips || {},
                         factionId: tFaction,
                         ownerId: tOwner,
                         type: myChild.type,

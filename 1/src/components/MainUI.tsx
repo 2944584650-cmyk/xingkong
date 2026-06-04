@@ -13,6 +13,7 @@ import { BoQuUI } from './BoQuUI';
 import { ChuanWuUI } from './ChuanWuUI';
 import { ObserveUI } from './ObserveUI';
 import { EntityContextMenu, ContextMenuData } from './EntityContextMenu';
+import { WuRenJiPanel } from './WuRenJiPanel';
 
 export const MainUI: React.FC = () => {
     // Component State
@@ -847,8 +848,13 @@ export const MainUI: React.FC = () => {
                         borderRadius: '2px'
                     }} />
                     
-                    {/* 雷达主体 */}
-                    <div style={{ zIndex: 2, width: '100%', height: '100%' }}>
+                    {/* 左侧新增：无人机控制阵列面板 */}
+                    <div style={{ zIndex: 2, width: '25%', height: '80%', display: 'flex', borderRight: '2px dashed #4a4e54', backgroundColor: 'rgba(0,0,0,0.4)', marginLeft: '50px' }}>
+                        <WuRenJiPanel />
+                    </div>
+
+                    {/* 右侧：雷达主体 */}
+                    <div style={{ zIndex: 2, width: '75%', height: '100%' }}>
                         <YouXiaJiao />
                     </div>
                 </div>

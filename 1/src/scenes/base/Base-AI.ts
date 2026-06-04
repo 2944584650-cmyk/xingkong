@@ -104,6 +104,7 @@ export function processAILogic(ent, allShipsList, dt, context) {
     
     let hasManualOverride = false;
     let isCommandDocking = false; // 标记是否处于指令停靠状态
+    let isCommandMining = false;  // 标记是否处于指令采矿状态
 
     // --- 2.5 提取出来的公共精确停靠物理逻辑 ---
     // 不再局限于 isWingman，任何身上挂有 dockingGuidanceTarget 的实体都可以执行
@@ -159,11 +160,82 @@ export function processAILogic(ent, allShipsList, dt, context) {
         }
     }
 
+    // --- 2.6 提取出来的公共采矿寻路逻辑 ---
+    // 任何具备 MINING 指令状态的实体都可以执行采矿寻路（不仅仅是玩家僚机）
+    if (ent.shipRef && ent.shipRef.commandState === 'MINING') {
+        isCommandMining = true;
+        hasManualOverride = true;
+        
+        // [采矿寻路] 寻找离自己最近的小行星
+        let closestAsteroid = null;
+        let minDist = Infinity;
+        
+        const sim = context.sectorSimulations ? context.sectorSimulations[simSectorName] : null;
+        const asteroids = sim ? sim.asteroids : [];
+        
+        if (asteroids && asteroids.length > 0) {
+            asteroids.forEach(ast => {
+                const d = Math.hypot(ast.x - ent.x, ast.y - ent.y);
+                if (d < minDist) {
+                    minDist = d;
+                    closestAsteroid = ast;
+                }
+            });
+        } else {
+            // 如果微观实体没生成，尝试找宏观矿带的中心点
+            const belts = worldState.asteroidBelts?.filter(b => b.sector === simSectorName) || [];
+            if (belts.length > 0) {
+                const belt = belts[0];
+                minDist = Math.hypot(belt.worldX - ent.x, belt.worldY - ent.y);
+                closestAsteroid = { x: belt.worldX, y: belt.worldY };
+            }
+        }
+        
+        // console.log(`[DEBUG - 采矿寻路] 飞船 ${ent.id} 状态为 MINING. 找到矿石: ${!!closestAsteroid}, minDist: ${minDist}`);
+        if (closestAsteroid) {
+            allowSuperCruise = minDist > 1000;
+            ent.target = null; // 采矿时不索敌（矿石不是目标）
+            
+            if (minDist > 300) {
+                // 距离矿石还很远，全速飞过去
+                moveTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
+                thrustMultiplier = 1.0;
+            } else if (minDist > 150) {
+                // 接近矿石，减速
+                moveTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
+                thrustMultiplier = 0.3;
+            } else {
+                // 已经很近了，停在原地开采
+                moveTarget = null;
+                thrustMultiplier = 0;
+                const dampingFactor = Math.pow(0.92, dt * 60);
+                ent.vx *= dampingFactor;
+                ent.vy *= dampingFactor;
+                
+                // 将船头对准小行星
+                lookTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
+                
+                // 自动释放采矿无人机
+                if (ent.shipRef && ent.shipRef.droneEquips && ent.shipRef.droneStates) {
+                    for (const [slotId, equipId] of Object.entries(ent.shipRef.droneEquips)) {
+                        if (equipId === 'mine_drone' && ent.shipRef.droneStates[slotId] === 'IDLE') {
+                            ShipManager.launchDrone(ent.id, slotId);
+                        }
+                    }
+                }
+            }
+        } else {
+            // 如果真的没矿，就原地发呆
+            // console.log(`[DEBUG - 采矿寻路] ${ent.id} 没有找到矿石目标，原地发呆`);
+            thrustMultiplier = 0;
+        }
+    }
+
 
     // --- 3. 僚机高级 AI 逻辑 (玩家编队/指挥) ---
     // 包含物理编队、独立狗斗和 RTS 指令覆盖
-    if (ent.isWingman && !isCommandDocking) {
-        // 如果已经被公共的指令停靠接管，就不走这里的僚机逻辑
+    if (ent.isWingman && !isCommandDocking && !isCommandMining) {
+        // 如果已经被公共的指令停靠或采矿接管，就不走这里的僚机逻辑
         
         // 优先处理宏观跨星区移动指令
         if (ent.shipRef && (ent.shipRef.state === 'DEPARTURE' || ent.shipRef.state === 'TRANSIT')) {

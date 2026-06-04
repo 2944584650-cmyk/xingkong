@@ -5,6 +5,7 @@ import { PlayerManager } from '../managers/PlayerManager';
 import { ShipManager } from '../managers/ShipManager';
 import { BuildingManager } from '../managers/BuildingManager';
 import { WorldbookManager } from '../scenes/WorldbookManager';
+import { InventoryManager } from '../managers/InventoryManager';
 
 // --- OPFS 工具函数 ---
 const getSaveFile = async (slotId: string, create = false) => {
@@ -114,6 +115,7 @@ export const ReactSaveLoadUI: React.FC<ReactSaveLoadUIProps> = ({ mode, onClose 
             BuildingManager.save();
             const worldState = WorldbookManager.getWorldState();
             WorldbookManager.saveWorldState(worldState);
+            InventoryManager.save();
         } catch (e) {
             console.warn("部分管理器可能未加载，忽略落盘", e);
         }

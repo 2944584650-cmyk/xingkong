@@ -128,8 +128,10 @@ export class PlayerManager {
                 ship.maxHp = mHp;
                 ship.cargoCapacity = cCap;
                 
-                // 安全兜底
+                //出厂生命值
                 if (ship.hp === undefined) {
+                    ship.hp = ship.maxHp;
+                } else if (ship.hp === hull.baseHp && ship.maxHp > hull.baseHp) {
                     ship.hp = ship.maxHp;
                 } else if (ship.hp > ship.maxHp) {
                     ship.hp = ship.maxHp;

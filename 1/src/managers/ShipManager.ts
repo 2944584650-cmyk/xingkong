@@ -23,6 +23,24 @@ export class Ship {
         // 彻底解耦：船 = 底盘(Hull) + 挂载件(Components)。如果没有，根据阵营分配预设
         this.hullId = data.hullId;
         this.loadout = data.loadout || {};
+        
+        // --- 无人机系统 ---
+        // 记录无人机槽位装备情况，格式: { slotId: itemKey }，如 { "DR1": "mine_drone" }
+        this.droneEquips = data.droneEquips || {};
+        // 记录每个槽位的状态，格式: { slotId: state }，state = 'IDLE' | 'WORKING' | 'RETURNING'
+        this.droneStates = data.droneStates || {};
+        
+        // [修复] 初始化时，如果带有无人机装备但无状态记录，则默认赋予 IDLE 状态
+        if (this.droneEquips) {
+            for (const slotId in this.droneEquips) {
+                if (!this.droneStates[slotId]) {
+                    this.droneStates[slotId] = 'IDLE';
+                }
+            }
+        }
+
+        // 记录外派的无人机实体 ID，格式: { slotId: entityId }
+        this.activeDrones = data.activeDrones || {};
 
         // === 向下兼容：仅修复之前错写的底盘ID，不影响未来新增的阵营商船 ===
         if (this.hullId === 'freighter_basic' || this.hullId === 'freighter_small') {
@@ -93,9 +111,11 @@ export class Ship {
         this.transitFromGate = data.transitFromGate || null;
         this.transitToGate = data.transitToGate || null;
 
+        const initialHpProvided = data.stats && data.stats.hp !== undefined;
+
         // 动态计算出的面板属性 (通过 recalculateStats 刷新)
         this.stats = {
-            hp: data.stats?.hp || (hullDef ? hullDef.baseHp : 100),
+            hp: initialHpProvided ? data.stats.hp : (hullDef ? hullDef.baseHp : 100),
             maxHp: hullDef ? hullDef.baseHp : 100,
             mass: hullDef ? (hullDef.mass || 10) : 10,
             drag: hullDef ? (hullDef.drag || 0.15) : 0.15,
@@ -110,6 +130,11 @@ export class Ship {
         
         // 初始化时强制重算一次总属性
         this.recalculateStats();
+
+        // 如果是新诞生的船只（没提供具体的存盘初始血量），出厂即强制满血
+        if (!initialHpProvided) {
+            this.stats.hp = this.stats.maxHp;
+        }
 
         // 订单/巡逻状态机专用
         this.orderQueue = data.orderQueue || []; 
@@ -369,14 +394,29 @@ export class Ship {
                             }
                         }
                         
-                        // 2. 补回对应的无人机物品
-                        let droneItemKey = 'attack_drone'; // 默认
-                        if (this.droneType === 'MINE') droneItemKey = 'mine_drone';
-                        if (this.droneType === 'BUILD') droneItemKey = 'builder_drone'; // 建筑无人机如果也消耗物品的话
-                        
-                        if (InventoryManager) {
-                            InventoryManager.addCargo(parentShip.id || parentShip.uid, droneItemKey, 1);
-                            console.log(`[物流调试 - F12] 无人机本体 ${droneItemKey} x1，已收回至母体货舱！`);
+                        // 2. 补回无人机实体
+                        if (this.sourceSlotId) {
+                            // 如果是从特定槽位发出的，恢复该槽位状态，不塞回货舱
+                            if (parentShip.droneStates) {
+                                parentShip.droneStates[this.sourceSlotId] = 'IDLE';
+                                if (parentShip.activeDrones) delete parentShip.activeDrones[this.sourceSlotId];
+                            }
+                            console.log(`[无人机] 已收回至母体槽位 ${this.sourceSlotId}`);
+                            
+                            // 触发 UI 刷新，让面板上的“返航中...”变回“出击”
+                            if (typeof window !== 'undefined' && document) {
+                                document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
+                            }
+                        } else {
+                            // 兼容旧逻辑：如果是纯消耗品发射的，补回对应的无人机物品
+                            let droneItemKey = 'attack_drone'; // 默认
+                            if (this.droneType === 'MINE') droneItemKey = 'mine_drone';
+                            if (this.droneType === 'BUILD') droneItemKey = 'builder_drone'; // 建筑无人机如果也消耗物品的话
+                            
+                            if (InventoryManager) {
+                                InventoryManager.addCargo(parentShip.id || parentShip.uid, droneItemKey, 1);
+                                console.log(`[物流调试 - F12] 无人机本体 ${droneItemKey} x1，已收回至母体货舱！`);
+                            }
                         }
 
                         // 如果母舰是玩家船(或玩家建筑)，触发同步事件
@@ -536,6 +576,7 @@ export class ShipManager {
                             factionId: 0,
                             location: spawnLoc,
                             loadout: pShip.slots || {}, // 映射 slots -> loadout
+                            droneEquips: pShip.droneEquips || {}, // 同步无人机配置
                             state: 'IDLE',
                             behavior: 'IDLE',
                             stats: { hp: pShip.hp, maxHp: pShip.maxHp || 100 }
@@ -546,6 +587,15 @@ export class ShipManager {
                         // 如果已有，同步关键配置（防止玩家在机库改了配件但宏观实体没变）
                         macroShip.hullId = pShip.hullId;
                         macroShip.loadout = pShip.slots || {};
+                        macroShip.droneEquips = pShip.droneEquips || {}; // 同步无人机配置
+                        
+                        // 确保同步后补齐状态
+                        for (const slotId in macroShip.droneEquips) {
+                            if (!macroShip.droneStates[slotId]) {
+                                macroShip.droneStates[slotId] = 'IDLE';
+                            }
+                        }
+
                         macroShip.recalculateStats(); // 刷新属性
                         
                         // 同步血量（以谁为准？通常微观战斗后会更新 ownedShips，所以以 ownedShips 为准）
@@ -926,52 +976,128 @@ export class ShipManager {
         return drone;
     }
 
-    // --- 无人机释放接口 ---
-    static launchDroneFromCargo(parentShipId: string, itemKey: string, droneType: string) {
-        const parent = this.getShipById(parentShipId);
-        if (!parent) return false;
-
-        // 检查货仓
+    // --- 无人机新版槽位控制接口 ---
+    
+    // 装备无人机到槽位
+    static equipDrone(shipId: string, slotId: string, itemKey: string) {
+        const ship = this.getShipById(shipId);
+        if (!ship) return false;
+        
+        // 检查并扣除货舱物品
         const InventoryManager = (window as any).InventoryManager;
-        let hasItem = false;
         if (InventoryManager) {
-            const inv = InventoryManager.getInventory(parentShipId);
-            if (inv[itemKey] && inv[itemKey] >= 1) hasItem = true;
+            const inv = InventoryManager.getInventory(shipId);
+            if (!inv[itemKey] || inv[itemKey] < 1) return false;
+            InventoryManager.removeCargo(shipId, itemKey, 1);
         }
         
-        if (!hasItem) {
-            console.log(`[ShipManager] 释放失败: 母舰 ${parent.name} 缺少 ${itemKey}`);
-            return false;
-        }
-
-        // 消耗物品
+        if (!ship.droneEquips) ship.droneEquips = {};
+        if (!ship.droneStates) ship.droneStates = {};
+        
+        ship.droneEquips[slotId] = itemKey;
+        ship.droneStates[slotId] = 'IDLE';
+        this.save();
+        
+        // 触发 UI 刷新
+        document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
+        return true;
+    }
+    
+    // 卸载无人机
+    static unequipDrone(shipId: string, slotId: string) {
+        const ship = this.getShipById(shipId);
+        if (!ship || !ship.droneEquips || !ship.droneEquips[slotId]) return false;
+        if (ship.droneStates && ship.droneStates[slotId] !== 'IDLE') return false; // 工作中不能卸载
+        
+        const itemKey = ship.droneEquips[slotId];
+        
+        // 归还到货舱
+        const InventoryManager = (window as any).InventoryManager;
         if (InventoryManager) {
-            InventoryManager.removeCargo(parentShipId, itemKey, 1);
+            InventoryManager.addCargo(shipId, itemKey, 1);
         }
-
-        // 查找预设 (将来可以做一张映射表，这里先简单按类型)
+        
+        delete ship.droneEquips[slotId];
+        if (ship.droneStates) delete ship.droneStates[slotId];
+        this.save();
+        
+        document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
+        return true;
+    }
+    
+    // 发射无人机 (工作)
+    static launchDrone(shipId: string, slotId: string) {
+        const parent = this.getShipById(shipId);
+        if (!parent || !parent.droneEquips || !parent.droneEquips[slotId]) return false;
+        if (parent.droneStates && parent.droneStates[slotId] !== 'IDLE') return false;
+        
+        const itemKey = parent.droneEquips[slotId];
+        
+        // 解析无人机类型
+        let droneType = 'ATTACK';
         let presetKey = 'attack_drone_gongji';
-        if (droneType === 'REPAIR') presetKey = 'repair_drone_preset'; // 未来支持的其它种类
-        if (droneType === 'MINE') presetKey = 'mine_drone_preset';
-
+        
+        if (itemKey === 'mine_drone') {
+            droneType = 'MINE';
+            presetKey = 'mine_drone_preset';
+        } else if (itemKey === 'builder_drone') {
+            droneType = 'BUILD';
+        }
+        
         const preset = GameConfig.FACTION_PRESETS[presetKey] || GameConfig.FACTION_PRESETS['attack_drone_gongji'];
-
+        
         // 生成实体
         const drone = this.spawnDrone({
             droneType: droneType,
             hullId: preset.hullId,
             loadout: preset.slots,
-            ownerId: parent.ownerId,     // 谁的无人机就属于谁
+            ownerId: parent.ownerId,
             factionId: parent.factionId, 
-            parentId: parent.id,         // 记录母体是谁
+            parentId: parent.id,
             location: {
                 sector: parent.location.sector,
                 x: parent.location.x + (Math.random() * 40 - 20),
                 y: parent.location.y + (Math.random() * 40 - 20)
             }
         });
-
-        console.log(`[ShipManager] 母舰 ${parent.name} 成功部署了 1 架 ${droneType} 型无人机: ${drone.id}`);
+        
+        // 标记它是从哪个槽位出来的
+        drone.sourceSlotId = slotId;
+        
+        // 更新母舰状态
+        if (!parent.activeDrones) parent.activeDrones = {};
+        parent.activeDrones[slotId] = drone.id;
+        parent.droneStates[slotId] = 'WORKING';
+        
+        console.log(`[ShipManager] 槽位 ${slotId} 释放无人机: ${drone.id}`);
+        this.save();
+        
+        document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
+        return true;
+    }
+    
+    // 召回无人机 (待命)
+    static recallDrone(shipId: string, slotId: string) {
+        const parent = this.getShipById(shipId);
+        if (!parent || !parent.droneStates || parent.droneStates[slotId] !== 'WORKING') return false;
+        
+        const droneId = parent.activeDrones ? parent.activeDrones[slotId] : null;
+        if (droneId) {
+            const drone = this.getShipById(droneId);
+            if (drone) {
+                drone.isReturning = true;
+                // 打断当前任务
+                drone.orderQueue = [];
+                drone.taskStack = [];
+                drone.state = 'IDLE'; 
+                console.log(`[ShipManager] 强制召回无人机: ${drone.id}`);
+            }
+        }
+        
+        parent.droneStates[slotId] = 'RETURNING';
+        this.save();
+        
+        document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
         return true;
     }
 

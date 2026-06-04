@@ -37,6 +37,7 @@ export function finishShipBuilding(targetEntityId: string, oldRef: any, spawnX: 
         name: oldRef.name || '新造舰船',
         hullId: oldRef.hullId,
         loadout: oldRef.loadout || {}, // 宏观属性名为 loadout
+        droneEquips: oldRef.droneEquips || {}, // 继承造船厂订单中携带的无人机配置
         factionId: tFaction,
         ownerId: tOwner,
         type: oldRef.type,
@@ -59,6 +60,7 @@ export function finishShipBuilding(targetEntityId: string, oldRef: any, spawnX: 
                 name: newShip.name,
                 hullId: newShip.hullId,
                 slots: newShip.loadout || {}, // 玩家资产库使用 slots 来记录装备数据
+                droneEquips: newShip.droneEquips || {}, // 玩家资产库增加无人机配置记录
                 cargo: {},
                 hp: newShip.stats ? newShip.stats.maxHp : 100,
                 location: { sector: newShip.location.sector, x: newShip.location.x, y: newShip.location.y }
@@ -207,6 +209,7 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
                             factionId: macroOrder.factionId,
                             ownerId: macroOrder.factionId,
                             loadout: parsedLoadout,
+                            droneEquips: macroOrder.payload.droneEquips || {},
                             type: macroOrder.payload.hullId.includes('destroyer') ? 'destroyer' : 'fighter',
                             sourceModuleId: mod.uid,
                             isBuilding: true

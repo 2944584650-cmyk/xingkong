@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { EventBus, GameEvents } from '../utils/EventBus';
 import { ShipManager } from '../managers/ShipManager';
 import { BuildingManager } from '../managers/BuildingManager';
 import { InventoryManager } from '../managers/InventoryManager';
+import { WorldbookManager } from '../scenes/WorldbookManager';
+import EquipmentData from '../../json/EquipmentData.json';
 
 /**
  * 右键上下文菜单所需的数据结构
@@ -60,7 +62,12 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
             EventBus.dispatchEvent(new CustomEvent(type, {
                 detail: { targetId: menuData.targetShip?.id }
             }));
-            
+        } else if (type === GameEvents.CMD_MINE) {
+            const currentSector = localStorage.getItem('current_sector') || '未知星区';
+            EventBus.dispatchEvent(new CustomEvent(type, {
+                detail: { x: menuData.worldX, y: menuData.worldY, targetSector: currentSector }
+            }));
+
         // -------------------------
         // 2. 实体交互类事件分发
         // -------------------------
@@ -114,6 +121,121 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
         onClose();
     };
 
+    // 检查是否点在矿带中 (精确圆盘碰撞检测，同步执行以避免 UI 闪烁)
+    let canMine = false;
+    let closestBeltDist = Infinity;
+    let targetBelt = null;
+    const currentSector = localStorage.getItem('current_sector');
+    const ws = WorldbookManager.getWorldState();
+    if (ws && ws.asteroidBelts && currentSector) {
+        const localBelts = ws.asteroidBelts.filter((b: any) => b.sector === currentSector);
+        for (const belt of localBelts) {
+            const dist = Math.hypot(menuData.worldX - belt.worldX, menuData.worldY - belt.worldY);
+            if (dist < closestBeltDist) {
+                closestBeltDist = dist;
+                targetBelt = belt;
+            }
+            if (dist <= belt.radius) {
+                canMine = true;
+                // 不 break，继续找最近的用来输出 debug
+            }
+        }
+    }
+
+    // [新增] 检查选中的舰队中是否至少有一艘飞船具备采矿能力 (装备了采矿捕获网和采矿无人机)
+    let hasMiningCapability = false;
+    let debugMiningInfo = {
+        isCommandMode: menuData.isCommandMode,
+        hasTargetShip: !!menuData.targetShip,
+        canMine: canMine,
+        closestBelt: targetBelt ? { x: targetBelt.worldX, y: targetBelt.worldY, radius: targetBelt.radius, distToClick: closestBeltDist } : "无",
+        clickPos: { x: menuData.worldX, y: menuData.worldY },
+        selectedShips: [] as any[]
+    };
+
+    if (menuData.isCommandMode) {
+        const game = (window as any).Phaser?.GAMES?.[0] || (window as any).game;
+        if (game && game.scene) {
+            const baseScene = game.scene.getScene('Base');
+            if (baseScene && baseScene.selectedUnitIds && baseScene.selectedUnitIds.length > 0) {
+                for (const shipId of baseScene.selectedUnitIds) {
+                    const ship = ShipManager.getShipById(shipId);
+                    if (ship) {
+                        let hasMiningLaser = false;
+                        let hasMiningDrone = false;
+                        let equippedLasers = [] as string[];
+                        let equippedDrones = [] as string[];
+
+                        if (ship.loadout) {
+                            hasMiningLaser = Object.values(ship.loadout).some((modId: any) => {
+                                if (!modId) return false;
+                                const compName = (EquipmentData.COMPONENTS as any)[modId]?.meta?.name || '';
+                                const isMiner = String(modId).includes('mine') || String(modId).includes('miner') || compName.includes('采矿') || compName.includes('矿物');
+                                equippedLasers.push(`${compName}(${modId})[${isMiner?'✔矿':'✘'}]`);
+                                return isMiner;
+                            });
+                        }
+                        
+                        if (ship.droneEquips) {
+                            hasMiningDrone = Object.values(ship.droneEquips).some((droneId: any) => {
+                                if (!droneId) return false;
+                                const droneName = (EquipmentData.HULLS as any)[droneId]?.name || '';
+                                const isMiner = String(droneId).includes('mine') || String(droneId).includes('miner') || droneName.includes('采矿') || droneName.includes('矿物');
+                                equippedDrones.push(`${droneName}(${droneId})[${isMiner?'✔矿':'✘'}]`);
+                                return isMiner;
+                            });
+                        }
+                        
+                        debugMiningInfo.selectedShips.push({
+                            id: shipId,
+                            name: ship.name,
+                            lasers: equippedLasers,
+                            drones: equippedDrones,
+                            capable: hasMiningLaser || hasMiningDrone
+                        });
+
+                        // 只要有任意一种采矿装备或采矿无人机就认为可以采矿
+                        if (hasMiningLaser || hasMiningDrone) {
+                            hasMiningCapability = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 只在指挥模式右键时输出调试信息，防止干扰正常游玩
+    useEffect(() => {
+        if (menuData.isCommandMode && !menuData.targetShip) {
+            // console.group(`%c[采矿判定调试]%c 右键空地采矿条件分析`, 'color: #ffff00; background: #222; padding: 2px 4px; border-radius: 3px;', 'color: unset;');
+            // console.log(`1. 是否点中实体? ${debugMiningInfo.hasTargetShip ? '❌是(无法采矿)' : '✅否(点中空地)'}`);
+            // console.log(`2. 点击坐标: X:${debugMiningInfo.clickPos.x.toFixed(1)}, Y:${debugMiningInfo.clickPos.y.toFixed(1)}`);
+            // if (debugMiningInfo.closestBelt !== "无") {
+            //     const belt: any = debugMiningInfo.closestBelt;
+            //     console.log(`   最近矿带: 中心(${belt.x.toFixed(1)}, ${belt.y.toFixed(1)}), 半径=${belt.radius}`);
+            //     console.log(`   点击距离: ${belt.distToClick.toFixed(1)}`);
+            // } else {
+            //     console.log(`   最近矿带: 当前星区没有矿带`);
+            // }
+            // console.log(`3. 是否判定为在矿带内? ${debugMiningInfo.canMine ? '✅是' : '❌否'}`);
+            // 
+            // console.log(`4. 舰队采矿装备检测结果: ${hasMiningCapability ? '✅满足' : '❌未满足(所有选中的船都没有采矿设备)'}`);
+            // console.table(debugMiningInfo.selectedShips.map(s => ({
+            //     飞船: `${s.name}(${s.id})`,
+            //     装备: s.lasers.join(' | '),
+            //     无人机: s.drones.join(' | '),
+            //     合格: s.capable ? '✅' : '❌'
+            // })));
+            // 
+            // if (debugMiningInfo.canMine && hasMiningCapability && !debugMiningInfo.hasTargetShip) {
+            //     console.log("%c⭐ 最终结果: 采矿按钮 [已成功显示]", "color: #00ff00; font-weight: bold");
+            // } else {
+            //     console.log("%c💥 最终结果: 采矿按钮 [被隐藏]", "color: #ff3333; font-weight: bold");
+            // }
+            // console.groupEnd();
+        }
+    }, [menuData, hasMiningCapability, debugMiningInfo]);
+
     // 菜单按钮的基础样式生成器
     const btnStyle = (color: string) => ({
         backgroundColor: 'transparent',
@@ -125,6 +247,9 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
         fontSize: '14px',
         transition: 'background-color 0.2s',
     });
+
+    // 只有在指挥模式、没有点在具体船只上，正好点在矿带圆形范围内，并且选中的船具备采矿能力时，才显示采矿按钮
+    const renderMineBtn = menuData.isCommandMode && !menuData.targetShip && canMine && hasMiningCapability;
 
     return (
         <div style={{
@@ -159,6 +284,17 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
                     >
                         ➤ 移动到此
                     </button>
+
+                    {renderMineBtn && (
+                        <button
+                            onClick={(e) => handleCommand(GameEvents.CMD_MINE, e)}
+                            style={btnStyle('#00ffff')}
+                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 255, 0.2)'}
+                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                            ⛏ 采矿作业
+                        </button>
+                    )}
                     
                     {menuData.targetShip && (
                         <>

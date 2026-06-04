@@ -309,9 +309,48 @@ export const CangKu: React.FC<CangKuProps> = ({ onClose }) => {
                                 </div>
                             </div>
 
+                            {/* Actions */}
+                            {selectedItem?.source === 'player' && (selectedInfo.def.type === 'drone' || selectedInfo.key.includes('_drone')) && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        const stats = PlayerManager.getStats();
+                                        if (stats.playerShipId) {
+                                            const realShip = ShipManager.getShipById(stats.playerShipId);
+                                            if (realShip && realShip.hullId) {
+                                                import('../../json/EquipmentData.json').then(data => {
+                                                    const hullData = (data.default.HULLS as any)[realShip.hullId];
+                                                    if (hullData && hullData.droneSlots) {
+                                                        const slots = Object.keys(hullData.droneSlots);
+                                                        const equips = realShip.droneEquips || {};
+                                                        const emptySlot = slots.find(s => !equips[s]);
+                                                        
+                                                        if (emptySlot) {
+                                                            if (ShipManager.equipDrone(stats.playerShipId, emptySlot, selectedInfo!.key)) {
+                                                                refreshCargo();
+                                                            }
+                                                        } else {
+                                                            alert("没有空闲的无人机槽位，请先在无人机面板卸载现有装备！");
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%', padding: '12px', marginTop: '15px', marginBottom: hasHost ? '15px' : 'auto',
+                                        backgroundColor: 'rgba(0, 255, 255, 0.1)', border: '1px solid #00ffff',
+                                        color: '#00ffff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold'
+                                    }}
+                                >
+                                    ⚙️ 装备到槽位
+                                </button>
+                            )}
+
                             {/* Transfer Actions */}
                             {hasHost && (
-                                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ marginTop: selectedItem?.source === 'player' && (selectedInfo.def.type === 'drone' || selectedInfo.key.includes('_drone')) ? '0' : 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     <div style={{ color: '#888', fontSize: '12px', textAlign: 'center' }}>
                                         {selectedItem?.source === 'player' ? '>>> 转移至宿主 >>>' : '<<< 提取至货舱 <<<'}
                                     </div>
@@ -323,24 +362,6 @@ export const CangKu: React.FC<CangKuProps> = ({ onClose }) => {
                                 </div>
                             )}
 
-                            {selectedItem?.source === 'player' && selectedInfo.def.type === 'drone' && (
-                                <button
-                                    onClick={() => {
-                                        const stats = PlayerManager.getStats();
-                                        if (stats.playerShipId) {
-                                            const success = ShipManager.launchDroneFromCargo(stats.playerShipId, selectedInfo!.key, selectedInfo!.def.droneType);
-                                            if (success) refreshCargo();
-                                        }
-                                    }}
-                                    style={{
-                                        width: '100%', padding: '12px', marginTop: hasHost ? '15px' : 'auto',
-                                        backgroundColor: 'rgba(0, 255, 255, 0.1)', border: '1px solid #00ffff',
-                                        color: '#00ffff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold'
-                                    }}
-                                >
-                                    🚀 部署无人机
-                                </button>
-                            )}
                         </>
                     ) : (
                         <div style={{ color: '#556', fontStyle: 'italic', display: 'flex', height: '100%', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
