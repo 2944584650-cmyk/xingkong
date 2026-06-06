@@ -42,7 +42,7 @@ export const CangKu: React.FC<CangKuProps> = ({ onClose }) => {
             const realShip = ShipManager.getShipById(stats.playerShipId);
             if (realShip) {
                 setCargo({ ...InventoryManager.getInventory(stats.playerShipId) });
-                setCapacity(InventoryManager.getCapacity(stats.playerShipId));
+                setCapacity(InventoryManager.getCapacity(stats.playerShipId, realShip));
                 
                 // 检查是否停泊在某个宿主中 (空间站或母舰)
                 if (realShip.dockedAt) {
@@ -51,17 +51,24 @@ export const CangKu: React.FC<CangKuProps> = ({ onClose }) => {
 
                     // 1. 优先尝试解析为空间站的统一聚合大库（解决单体模块储量与总库隔离的问题）
                     const stationVirtualShip = BuildingManager.getStationAsVirtualShip(actualHostId);
+                    let hostEntity: any = null;
                     if (stationVirtualShip) {
                         actualHostId = stationVirtualShip.id;
                         finalHostName = stationVirtualShip.name || '联邦空间站';
                     } else {
                         // 2. 否则当作常规飞船/母舰提取名称
-                        const hostEntity = ShipManager.getShipById(actualHostId);
+                        hostEntity = ShipManager.getShipById(actualHostId);
                         if (hostEntity) finalHostName = hostEntity.name;
                     }
 
                     setHostCargo({ ...InventoryManager.getInventory(actualHostId) });
-                    setHostCapacity(InventoryManager.getCapacity(actualHostId));
+                    
+                    // 为宿主也提供兜底对象
+                    let hostFallback = null;
+                    if (stationVirtualShip) hostFallback = stationVirtualShip;
+                    else if (hostEntity) hostFallback = hostEntity;
+                    
+                    setHostCapacity(InventoryManager.getCapacity(actualHostId, hostFallback));
                     setHostName(finalHostName);
                     setHasHost(true);
                     setHostId(actualHostId);

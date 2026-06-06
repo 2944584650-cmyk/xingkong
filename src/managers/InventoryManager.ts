@@ -78,17 +78,43 @@ export class InventoryManager {
      * 获取指定实体的最大货舱容量
      * 会自动向对应的系统 (ShipManager 或 BuildingManager) 索要最新配置
      * @param entityId 实体ID
+     * @param fallbackObj 可选的兜底对象（如果宏观列表里找不到该ID，可以直接从传进来的对象里读属性）
      * @returns 最大容量数值
      */
-    static getCapacity(entityId: string): number {
+    static getCapacity(entityId: string, fallbackObj?: any): number {
         let capacity = 100;
+
         if (typeof window !== 'undefined') {
             const sm = (window as any).ShipManager;
             const bm = (window as any).BuildingManager;
 
             if (sm) {
-                const ship = sm.ships?.find((s: any) => s.id === entityId);
-                if (ship) return ship.maxInventory || 100;
+                // 1. 先尝试在宏观 ShipManager 里找
+                let ship = sm.ships?.find((s: any) => s.id === entityId);
+                
+                // 2. 如果没找到，并且调用方提供了 fallbackObj，说明它是微观实体或者其他数据链
+                if (!ship && fallbackObj) {
+                    ship = fallbackObj.shipRef || fallbackObj;
+                }
+                
+                if (ship) {
+                    if (ship.maxInventory !== undefined) {
+                        return ship.maxInventory;
+                    }
+                    // Fallback to GameConfig
+                    const gc = (window as any).GameConfig || GameConfig;
+                    if (gc && gc.HULLS && ship.hullId) {
+                        const hullDef = gc.HULLS[ship.hullId];
+                        if (hullDef && hullDef.maxInventory) {
+                            return hullDef.maxInventory;
+                        }
+                    }
+                    console.warn(`[InventoryManager] 警告：实体 ${entityId} (sm.ships.length=${sm.ships?.length}) 在飞船逻辑中未找到 maxInventory 且无有效 hullId，退回到默认值 100。实体数据:`, ship);
+                    return 100;
+                } else if (!ship) {
+                    // 如果在这里都没找到船，打印出当前的 ships 长度
+                    console.warn(`[InventoryManager] 警告：在 ShipManager.ships (长度: ${sm.ships?.length}) 中没有找到实体 ${entityId}！`);
+                }
             }
 
             if (bm) {
@@ -97,11 +123,15 @@ export class InventoryManager {
                 if (stationMods.length > 0) {
                     capacity = 0;
                     stationMods.forEach((m: any) => {
-                        capacity += m.inventoryCapacity || 100;
+                        // 统一兼容: 优先找 maxInventory，找不到再看历史遗留的 inventoryCapacity
+                        capacity += m.maxInventory || m.inventoryCapacity || 100;
                     });
                     return capacity;
                 }
             }
+        }
+        if (capacity === 100) {
+            console.warn(`[InventoryManager] 警告：未能匹配到实体 ${entityId} 的任何配置，已回退到最终默认值 100。`);
         }
         return capacity;
     }
@@ -111,12 +141,13 @@ export class InventoryManager {
      * @param entityId 目标实体ID
      * @param itemId 物品ID
      * @param amount 尝试添加的数量
+     * @param fallbackObj 可选的实体对象引用，用于在计算容量时进行回退查询
      * @returns 实际成功添加的数量 (如果空间不足可能小于尝试数量)
      */
-    static addCargo(entityId: string, itemId: string, amount: number): number {
+    static addCargo(entityId: string, itemId: string, amount: number, fallbackObj?: any): number {
         if (amount <= 0 || !entityId) return 0;
         const inv = this.getInventory(entityId);
-        const capacity = this.getCapacity(entityId);
+        const capacity = this.getCapacity(entityId, fallbackObj);
         const currentVol = this.getCurrentVolume(entityId);
         const itemVol = this.getItemVolume(itemId);
 

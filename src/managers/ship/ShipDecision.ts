@@ -8,9 +8,57 @@ export class ShipDecision {
     static process(ship: any, worldState: any) {
         if (!ship.taskStack) ship.taskStack = [];
         
+        // 矿船自主采矿闭环（不依赖订单系统）
+        // 仅允许NPC的矿船进行自主驱动，玩家矿船不再自动接管
+        if (ship.taskStack.length === 0 && ship.type === 'miner' && !ship.isBuilding && ship.ownerId !== 'player') {
+            this.processAutonomousMining(ship, worldState);
+            return;
+        }
+
         // 佣兵接单模块：如果飞船闲置且没有任何任务，且不是正在建造中的虚影，主动去公共订单池里找活干
         if (ship.taskStack.length === 0 && ship.ownerId !== 'player' && ship.type !== 'drone' && !ship.isBuilding) {
             this.seekPublicOrders(ship, worldState);
+        }
+    }
+
+    /**
+     * 矿船纯自主采矿闭环 (状态机本能，非订单驱动)
+     */
+    static processAutonomousMining(ship: any, worldState: any) {
+        const InventoryManager = (window as any).InventoryManager;
+        if (!InventoryManager) return;
+        
+        const currentCargo = InventoryManager.getCurrentVolume(ship.id);
+        const capacity = InventoryManager.getCapacity(ship.id);
+        
+        // 判断1：如果货舱容量达到 80%，进入返航卸货流程
+        if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
+            // 所有船都应该有停泊卸货行为
+            ship.taskStack.push({ action: 'FIND_BASE_AND_UNLOAD' });
+            // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 容量达80%，压入任务: FIND_BASE_AND_UNLOAD`);
+            return;
+        }
+
+        // 判断2：去挖矿。优先在当前星区找矿带
+        if (worldState.asteroidBelts) {
+            const localBelts = worldState.asteroidBelts.filter((b: any) => b.sector === ship.location.sector);
+            if (localBelts.length > 0) {
+                // 只要当前星区有矿带，直接压入 MINE_SECTOR 任务即可
+                // 底层物理 AI 会自动判断自己是否在矿区圆圈范围内
+                ship.taskStack.push({ action: 'MINE_SECTOR', targetSector: ship.location.sector });
+            } else {
+                // 如果当前星区没矿，寻找最近有矿带的星区并跳跃
+                // 为了简单，暂时随机找一个有矿的星系跳过去
+                const allBelts = worldState.asteroidBelts;
+                if (allBelts.length > 0) {
+                    const belt = allBelts[Math.floor(Math.random() * allBelts.length)];
+                    // console.log(`[采矿决策] 矿船 ${ship.name} (ID: ${ship.id}) 当前星区 ${ship.location.sector} 无矿带，决定跳跃至 ${belt.sector} 寻找矿区。`);
+                    ship.taskStack.push({ action: 'JUMP_TO_SECTOR', target: belt.sector });
+                    // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 压入任务: JUMP_TO_SECTOR, 目标星区: ${belt.sector}`);
+                } else {
+                    // console.log(`[采矿决策] 矿船 ${ship.name} (ID: ${ship.id}) 在全宇宙都找不到矿带！`);
+                }
+            }
         }
     }
 
@@ -43,13 +91,6 @@ export class ShipDecision {
             // TODO: 等待经济系统订单完善，目前暂时什么都不接，避免跑去前线送死
             targetOrder = worldState.orders.find(
                 (o: any) => (o.type === 'TRADE' || o.type === 'TRANSPORT') && o.status === 'PENDING' && o.factionId === ship.factionId
-            );
-        }
-        else if (ship.type === 'miner') {
-            // --- 矿船：未来接取采矿任务 (MINE) ---
-            // TODO: 完善采矿订单
-            targetOrder = worldState.orders.find(
-                (o: any) => o.type === 'MINE' && o.status === 'PENDING' && o.factionId === ship.factionId
             );
         }
 
@@ -99,7 +140,7 @@ export class ShipExecution {
                     this.requestPathToSector(ship, task.target, worldState);
                 }
                 break;
-                
+
             case 'WAIT':
                 if (task.duration > 0) {
                     task.duration -= dt;
@@ -176,6 +217,77 @@ export class ShipExecution {
                 // 预留，当前端或 OOS 判定完成 docking 后，需要外部调用 ship.taskStack.shift()
                 break;
                 
+            case 'FIND_BASE_AND_UNLOAD': {
+                // 通用寻找空间站卸货的逻辑
+                const BuildingManager = (window as any).BuildingManager;
+                if (!BuildingManager) {
+                    ship.taskStack.shift();
+                    break;
+                }
+                
+                const allModules = BuildingManager.getAllModules();
+                
+                // 初步筛选（不限制阵营）
+                // 所有船都不找玩家基地，统一找 NPC 基地卸货停泊
+                const myBases = allModules.filter((m: any) => {
+                    const isPlayerBase = m.ownerId === 'player';
+                    return !isPlayerBase;
+                });
+                
+                if (myBases.length > 0) {
+                    // 暂且选同星区最近的，或者第一个
+                    let targetBase = myBases.find((m: any) => m.sector === ship.location.sector);
+                    if (!targetBase) {
+                        targetBase = myBases[0];
+                    }
+                    
+                    // 移除当前任务
+                    ship.taskStack.shift();
+                    
+                    // 将停泊和卸货任务压入栈
+                    ship.taskStack.unshift({ action: 'TRANSFER_CARGO', targetBaseUid: targetBase.uid });
+                    ship.taskStack.unshift({ action: 'DOCK_AT_STATION', targetBaseUid: targetBase.uid });
+                    
+                    if (targetBase.sector !== ship.location.sector) {
+                        ship.taskStack.unshift({ action: 'JUMP_TO_SECTOR', target: targetBase.sector });
+                    }
+                    
+                } else {
+                    console.log(`[物流] 船只 ${ship.name} 找不到适合的卸货点，原地丢弃货物。`);
+                    const InventoryManager = (window as any).InventoryManager;
+                    if (InventoryManager) {
+                        InventoryManager.clearInventory(ship.id);
+                    }
+                    ship.taskStack.shift();
+                }
+                break;
+            }
+
+            case 'TRANSFER_CARGO': {
+                // 抵达星区并停泊后，进行卸货操作
+                const targetBaseUid = task.targetBaseUid;
+                const BuildingManager = (window as any).BuildingManager;
+                const InventoryManager = (window as any).InventoryManager;
+                
+                if (BuildingManager && InventoryManager) {
+                    const mod = BuildingManager.getAllModules().find((m: any) => m.uid === targetBaseUid);
+                    if (mod && mod.sector === ship.location.sector) {
+                        const myInv = InventoryManager.getInventory(ship.id);
+                        for (const good in myInv) {
+                            if (myInv[good] > 0) {
+                                if (!mod.inventory) mod.inventory = {};
+                                if (!mod.inventory[good]) mod.inventory[good] = 0;
+                                mod.inventory[good] += myInv[good];
+                                console.log(`[物流] 船只 ${ship.name} 卸货 ${good} x${myInv[good]} 到建筑 ${mod.uid}`);
+                                InventoryManager.removeCargo(ship.id, good, myInv[good]);
+                            }
+                        }
+                    }
+                }
+                ship.taskStack.shift();
+                break;
+            }
+
             case 'MINE_SECTOR': {
                 // console.log(`[DEBUG - MINE_SECTOR 执行] 飞船 ${ship.name} (ID: ${ship.id}) 进入采矿作业节点，当前星区: ${ship.location.sector}`);
 

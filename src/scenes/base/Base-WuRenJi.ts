@@ -40,7 +40,7 @@ export function getActualFlagship(droneEnt: any, allShipsList: any[]) {
  * @param {Array} allShipsList - 当前星区内所有存活的实体列表（用于查找母体）
  * @returns {boolean} - 如果返回 false，表示该无人机需要被立即处死（自毁）
  */
-export function checkDroneSurvival(droneEnt: any, allShipsList: any[]) {
+export function checkDroneSurvival(droneEnt: any, allShipsList: any[], asteroidsList?: any[]) {
     // 无人机必须有 parentId，且父实体必须存活于当前星区
     if (!droneEnt.parentId) {
         if (!droneEnt._deathLog) {
@@ -98,7 +98,7 @@ export function checkDroneSurvival(droneEnt: any, allShipsList: any[]) {
                 // console.log('采矿无人机已识别: ', droneEnt.id);
                 droneEnt._mineIdentifiedLog = true;
             }
-            handleMineDroneBehavior(droneEnt, allShipsList);
+            handleMineDroneBehavior(droneEnt, allShipsList, asteroidsList);
         }
     }
 
@@ -109,8 +109,9 @@ export function checkDroneSurvival(droneEnt: any, allShipsList: any[]) {
  * 采矿无人机的专属行为逻辑
  * @param droneEnt 无人机实体
  * @param allShipsList 当前星区内的所有存活实体列表
+ * @param asteroidsList 当前星区内的小行星实体列表
  */
-export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[]) {
+export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[], asteroidsList?: any[]) {
     // 1. 获取母体（旗舰或建筑模块）
     const actualFlagship = getActualFlagship(droneEnt, allShipsList);
 
@@ -127,32 +128,30 @@ export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[]) {
     // --- 采矿作业模式的周围小行星检测 ---
     let hasAsteroidNearby = false;
     if (!isReturning) {
-        // 尝试从微观物理系统中获取当前星区的小行星列表（在 Base.ts 中保存在 sectorSimulations[sectorName].asteroids）
-        
         const searchCenterX = actualFlagship ? actualFlagship.x : droneEnt.x;
         const searchCenterY = actualFlagship ? actualFlagship.y : droneEnt.y;
         
-        // 我们利用一个传入的小行星列表或者全局存储。这里为了不破坏原有函数签名，我们假设可以访问全局或由 Base 传入。
-        // 临时解决方案：如果无人机身上没有绑定 _asteroidLastSeen 时间戳，先初始化。
-        // 我们直接修改 `isReturning` 的条件，如果没有找到小行星超过 5 秒 (5000ms/60帧左右) 触发返航。
-        
-        // TODO: 这里需要真正的从引擎获取小行星列表，目前由于接口限制，我们先判断目标。
-        // 我们可以在 handleMineDroneBehavior 参数里传入环境，但为了兼容，我们在 droneEnt.shipRef 上记录。
-        // 如果采矿无人机没有设定具体的 target（矿物），就认为它可能在闲置
-        if (!droneEnt.target || droneEnt.target.hp <= 0) { // 假设 target 被设置为小行星
-             hasAsteroidNearby = false;
-        } else {
-             hasAsteroidNearby = true;
+        if (asteroidsList && asteroidsList.length > 0) {
+            for (const ast of asteroidsList) {
+                const dist = Math.hypot(ast.x - searchCenterX, ast.y - searchCenterY);
+                if (dist <= 1500) { // 在母体周围 1500 像素内存在小行星实体
+                    hasAsteroidNearby = true;
+                    break;
+                }
+            }
         }
 
         // 简单的超时计数器 (假设每秒 60 帧)
         if (!hasAsteroidNearby) {
             droneEnt._idleTimer = (droneEnt._idleTimer || 0) + 1;
-        if (droneEnt._idleTimer > 300) { // 5秒 = 300帧
-            // console.log(`[无人机 ${droneEnt.id}] 超过5秒未发现小行星，开始返航`);
-            isReturning = true;
-            if (droneEnt.shipRef) droneEnt.shipRef.isReturning = true;
-        }
+            if (droneEnt._idleTimer > 300) { // 5秒 = 300帧
+                if (!droneEnt._mineIdleLog) {
+                    console.warn(`[采矿调试] 无人机 ID: ${droneEnt.id} 超过5秒未在附近发现小行星实体，触发闲置强制返航！`);
+                    droneEnt._mineIdleLog = true;
+                }
+                isReturning = true;
+                if (droneEnt.shipRef) droneEnt.shipRef.isReturning = true;
+            }
         } else {
             droneEnt._idleTimer = 0;
         }
@@ -162,6 +161,10 @@ export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[]) {
 
     if (isReturning) {
         // --- 满载返航模式 / 无矿返航 ---
+        if (!droneEnt._mineReturnLog) {
+            console.log(`[采矿调试] 无人机 ID: ${droneEnt.id} 开始执行返航机动，寻找母体: ${actualFlagship ? actualFlagship.id : '未知'}`);
+            droneEnt._mineReturnLog = true;
+        }
         handleDroneReturnToMothership(droneEnt, actualFlagship, { isUrgentReturn: true });
     } else {
         // --- 采矿作业模式 ---

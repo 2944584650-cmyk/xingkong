@@ -41,7 +41,8 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
     const hullId = shipData?.hullId || shipData?.shipRef?.hullId;
     const shipName = shipData?.name || hullId || shipData?.id || '未知目标';
 
-    // console.log("[ObserveUI] 渲染观察界面，接收到 shipData:", shipData, "提取到的 inventory:", inventory);
+    // 传入 shipData 自身作为 fallbackObj，解决微观实体由于 ID 不同导致在宏观列表找不到从而 fallback 到 100 的问题
+    const capacity = shipData ? InventoryManager.getCapacity(shipData.id, shipData) : 100;
 
     // 装备处理
     const getComponentName = (compId: string) => {
@@ -122,7 +123,9 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                 {/* 货舱 */}
                 <div style={{ flex: 1, borderRight: '1px solid rgba(255,0,255,0.2)', padding: '15px', overflowY: 'auto' }}>
-                    <h4 style={{ color: '#ff00ff', borderBottom: '1px solid #550055', paddingBottom: '8px', marginTop: 0 }}>货舱物资 (Cargo)</h4>
+                    <h4 style={{ color: '#ff00ff', borderBottom: '1px solid #550055', paddingBottom: '8px', marginTop: 0 }}>
+                        货舱物资 ({capacity} 吨)
+                    </h4>
                     {inventoryList.length === 0 ? <div style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>空空如也</div> : (
                         inventoryList.map(item => (
                             <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', margin: '4px 0', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', border: '1px solid #333' }}>

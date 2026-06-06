@@ -160,60 +160,60 @@ export function processAILogic(ent, allShipsList, dt, context) {
         }
     }
 
-    // --- 2.6 提取出来的公共采矿寻路逻辑 ---
-    // 任何具备 MINING 指令状态的实体都可以执行采矿寻路（不仅仅是玩家僚机）
-    if (ent.shipRef && ent.shipRef.commandState === 'MINING') {
+    // --- 2.6 提取出来的公共采矿寻路逻辑 (新版：矿带内随机点散布) ---
+    // 任何具备 MINING 指令状态的实体都可以执行采矿寻路 (但绝对排除无人机，无人机有自己的采矿逻辑)
+    if (ent.type !== 'drone' && ent.shipRef && ent.shipRef.commandState === 'MINING') {
         isCommandMining = true;
         hasManualOverride = true;
+        ent.target = null; // 采矿时不索敌
         
-        // [采矿寻路] 寻找离自己最近的小行星
-        let closestAsteroid = null;
-        let minDist = Infinity;
+        // 获取当前星区的宏观矿带
+        const belts = worldState.asteroidBelts?.filter(b => b.sector === simSectorName) || [];
         
-        const sim = context.sectorSimulations ? context.sectorSimulations[simSectorName] : null;
-        const asteroids = sim ? sim.asteroids : [];
-        
-        if (asteroids && asteroids.length > 0) {
-            asteroids.forEach(ast => {
-                const d = Math.hypot(ast.x - ent.x, ast.y - ent.y);
-                if (d < minDist) {
-                    minDist = d;
-                    closestAsteroid = ast;
-                }
-            });
-        } else {
-            // 如果微观实体没生成，尝试找宏观矿带的中心点
-            const belts = worldState.asteroidBelts?.filter(b => b.sector === simSectorName) || [];
-            if (belts.length > 0) {
-                const belt = belts[0];
-                minDist = Math.hypot(belt.worldX - ent.x, belt.worldY - ent.y);
-                closestAsteroid = { x: belt.worldX, y: belt.worldY };
-            }
-        }
-        
-        // console.log(`[DEBUG - 采矿寻路] 飞船 ${ent.id} 状态为 MINING. 找到矿石: ${!!closestAsteroid}, minDist: ${minDist}`);
-        if (closestAsteroid) {
-            allowSuperCruise = minDist > 1000;
-            ent.target = null; // 采矿时不索敌（矿石不是目标）
+        if (belts.length > 0) {
+            // 简单起见，取第一个矿带
+            const belt = belts[0];
             
-            if (minDist > 300) {
-                // 距离矿石还很远，全速飞过去
-                moveTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
+            // 1. 生成或获取该飞船专属的矿区内随机坐标
+            if (!ent.miningTargetPos) {
+                const angle = Math.random() * Math.PI * 2;
+                // 在 0 ~ radius*0.8 的范围内随机生成，确保在圆圈内部不贴边
+                const r = Math.random() * belt.radius * 0.8;
+                ent.miningTargetPos = {
+                    x: belt.worldX + Math.cos(angle) * r,
+                    y: belt.worldY + Math.sin(angle) * r
+                };
+            }
+            
+            // 计算飞船到其专属采矿坐标的距离
+            const distToMiningPos = Math.hypot(ent.miningTargetPos.x - ent.x, ent.miningTargetPos.y - ent.y);
+            
+            // --- 节流的物理层 F12 调试 ---
+            const now = Date.now();
+            if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
+                console.log(`[物理层-采矿] 飞船 ${ent.id} 前往专属矿点(${ent.miningTargetPos.x.toFixed(0)}, ${ent.miningTargetPos.y.toFixed(0)}), 距离: ${distToMiningPos.toFixed(0)}`);
+                ent.lastDebugTime = now;
+            }
+            
+            // 2. 判定是否到达了专属采矿坐标
+            if (distToMiningPos > 50) {
+                // 距离大于 50，继续向目标飞行
+                allowSuperCruise = distToMiningPos > 1000;
+                moveTarget = { x: ent.miningTargetPos.x, y: ent.miningTargetPos.y };
                 thrustMultiplier = 1.0;
-            } else if (minDist > 150) {
-                // 接近矿石，减速
-                moveTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
-                thrustMultiplier = 0.3;
             } else {
-                // 已经很近了，停在原地开采
+                // 已经到达目标点，停船并开始作业
+                allowSuperCruise = false;
                 moveTarget = null;
                 thrustMultiplier = 0;
-                const dampingFactor = Math.pow(0.92, dt * 60);
-                ent.vx *= dampingFactor;
-                ent.vy *= dampingFactor;
                 
-                // 将船头对准小行星
-                lookTarget = { x: closestAsteroid.x, y: closestAsteroid.y };
+                // 刹车控制
+                const curSpeed = Math.hypot(ent.vx, ent.vy);
+                if (curSpeed > 1) {
+                    const dampingFactor = Math.pow(0.92, dt * 60);
+                    ent.vx *= dampingFactor;
+                    ent.vy *= dampingFactor;
+                }
                 
                 // 自动释放采矿无人机
                 if (ent.shipRef && ent.shipRef.droneEquips && ent.shipRef.droneStates) {
@@ -225,17 +225,62 @@ export function processAILogic(ent, allShipsList, dt, context) {
                 }
             }
         } else {
-            // 如果真的没矿，就原地发呆
-            // console.log(`[DEBUG - 采矿寻路] ${ent.id} 没有找到矿石目标，原地发呆`);
+            // 当前星区根本没矿带，原地发呆
             thrustMultiplier = 0;
+            const now = Date.now();
+            if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
+                console.log(`[物理层-采矿] 飞船 ${ent.id} 无法在 ${simSectorName} 找到任何宏观矿带！`);
+                ent.lastDebugTime = now;
+            }
+        }
+    } else {
+        // 如果飞船不再处于 MINING 状态，清除其专属采矿坐标，以便下次重新生成
+        if (ent.miningTargetPos) {
+            ent.miningTargetPos = null;
+        }
+    }
+
+    let isCommandMoving = false; // 标记是否处于指令移动状态
+
+    // --- 2.7 提取出来的公共强制移动到坐标点指令 ---
+    // 任何具备 MOVE_TO 状态的飞船都应该可以强制向某点移动，不能只限于僚机
+    if (ent.type !== 'drone' && ent.shipRef && ent.shipRef.commandState === 'MOVE_TO' && !isCommandDocking && !isCommandMining) {
+        if (!ent.moveTarget && ent.shipRef.moveTarget) {
+            ent.moveTarget = { x: ent.shipRef.moveTarget.x, y: ent.shipRef.moveTarget.y };
+        }
+        
+        if (ent.moveTarget) {
+            isCommandMoving = true;
+            hasManualOverride = true;
+            moveTarget = ent.moveTarget;
+            thrustMultiplier = 1.0;
+            ent.target = null; // 强制移动时不开火
+            allowSuperCruise = true; // 允许超巡赶路
+            
+            const dist = Math.hypot(ent.moveTarget.x - ent.x, ent.moveTarget.y - ent.y);
+            
+            // --- 节流的物理层 F12 调试 ---
+            const now = Date.now();
+            if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
+                console.log(`[物理层-移动] 飞船 ${ent.id} 前往(${ent.moveTarget.x.toFixed(0)}, ${ent.moveTarget.y.toFixed(0)}), 当前(${ent.x.toFixed(0)}, ${ent.y.toFixed(0)}), 距离: ${dist.toFixed(0)}`);
+                ent.lastDebugTime = now;
+            }
+            
+            // 到达目标点附近后解除移动指令
+            if (dist < 150) {
+                ent.guardPoint = { x: ent.moveTarget.x, y: ent.moveTarget.y };
+                ent.shipRef.commandState = null;
+                ent.moveTarget = null;
+                ent.shipRef.moveTarget = null;
+            }
         }
     }
 
 
     // --- 3. 僚机高级 AI 逻辑 (玩家编队/指挥) ---
     // 包含物理编队、独立狗斗和 RTS 指令覆盖
-    if (ent.isWingman && !isCommandDocking && !isCommandMining) {
-        // 如果已经被公共的指令停靠或采矿接管，就不走这里的僚机逻辑
+    if (ent.type !== 'drone' && ent.isWingman && !isCommandDocking && !isCommandMining && !isCommandMoving) {
+        // 如果已经被公共的指令停靠、采矿或强制移动接管，就不走这里的僚机逻辑
         
         // 优先处理宏观跨星区移动指令
         if (ent.shipRef && (ent.shipRef.state === 'DEPARTURE' || ent.shipRef.state === 'TRANSIT')) {
@@ -243,28 +288,6 @@ export function processAILogic(ent, allShipsList, dt, context) {
             thrustMultiplier = 1.0;
             ent.target = null; // 赶路时不主动索敌
             allowSuperCruise = true;
-        } 
-        // 处理强制移动到坐标点指令
-        else if (ent.shipRef && ent.shipRef.commandState === 'MOVE_TO') {
-            if (!ent.moveTarget && ent.shipRef.moveTarget) {
-                ent.moveTarget = { x: ent.shipRef.moveTarget.x, y: ent.shipRef.moveTarget.y };
-            }
-            
-            if (ent.moveTarget) {
-                moveTarget = ent.moveTarget;
-                thrustMultiplier = 1.0;
-                hasManualOverride = true;
-                ent.target = null; // 移动时不开火
-                allowSuperCruise = true;
-                
-                // 到达目标点附近后解除移动指令
-                if (Math.hypot(ent.moveTarget.x - ent.x, ent.moveTarget.y - ent.y) < 150) {
-                    ent.guardPoint = { x: ent.moveTarget.x, y: ent.moveTarget.y };
-                    ent.shipRef.commandState = null;
-                    ent.moveTarget = null;
-                    ent.shipRef.moveTarget = null;
-                }
-            }
         } 
         // 处理强制攻击指令
         else if (ent.shipRef && ent.shipRef.commandState === 'ATTACK_TARGET') {

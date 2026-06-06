@@ -102,13 +102,13 @@ export class PlayerManager {
             }
         }
 
-        // 统一为所有所有拥有的船只动态计算并挂载真实的 maxHp 和 cargoCapacity
+        // 统一为所有所有拥有的船只动态计算并挂载真实的 maxHp 和 maxInventory
         if (stats.ownedShips) {
             stats.ownedShips.forEach(ship => {
                 const hull = GameConfig.HULLS[ship.hullId] || { baseHp: 100 };
                 let mHp = hull.baseHp;
-                // 优先读取 maxInventory, 如果没有才尝试 cargoCapacity 等
-                let cCap = hull.maxInventory || hull.cargoCapacity || Math.floor(hull.baseHp / 2) || 50;
+                // 统一只读取 maxInventory 作为底层船体容量基础
+                let cCap = hull.maxInventory || Math.floor(hull.baseHp / 2) || 50;
                 
                 if (!ship.cargo) ship.cargo = {}; // 初始化货舱数据
 
@@ -126,7 +126,7 @@ export class PlayerManager {
                     });
                 }
                 ship.maxHp = mHp;
-                ship.cargoCapacity = cCap;
+                ship.maxInventory = cCap;
                 
                 //出厂生命值
                 if (ship.hp === undefined) {
@@ -531,7 +531,7 @@ export class PlayerManager {
             currentWeight += w * (qty as number);
         });
         
-        if (currentWeight + addWeight > (ship.cargoCapacity || 50)) {
+        if (currentWeight + addWeight > (ship.maxInventory || 50)) {
             // 超重
             return false;
         }
@@ -592,7 +592,7 @@ export class PlayerManager {
         if (ship) {
             return {
                 cargo: ship.cargo || {},
-                capacity: ship.cargoCapacity || 50
+                capacity: ship.maxInventory || 50
             };
         }
         return null;

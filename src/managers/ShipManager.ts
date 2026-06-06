@@ -74,7 +74,6 @@ export class Ship {
         if (this.type === 'drone') {
             this.droneType = data.droneType || ((hullDef && hullDef.droneType) ? hullDef.droneType : 
                             (this.hullId === 'attack_drone_gongji' ? 'ATTACK' : 'GENERAL'));
-            console.log(`[ShipManager] 无人机 ${this.id} 被标记为类型: ${this.droneType}`);
         }
 
         // 状态
@@ -112,6 +111,9 @@ export class Ship {
         this.transitToGate = data.transitToGate || null;
 
         const initialHpProvided = data.stats && data.stats.hp !== undefined;
+
+        // 直接从底盘配置获取容量
+        this.maxInventory = hullDef ? hullDef.maxInventory : 100;
 
         // 动态计算出的面板属性 (通过 recalculateStats 刷新)
         this.stats = {
@@ -275,15 +277,15 @@ export class Ship {
         }
 
         // --- 采矿产出与满载回收逻辑 ---
-        let hasMinerBeam = false;
+        let minerWeapon = null;
         if (this.activeWeapons && this.activeWeapons.length > 0) {
-            hasMinerBeam = this.activeWeapons.some(w => w.compId === 'miner_beam_mk1');
+            minerWeapon = this.activeWeapons.find(w => w.compId === 'miner_beam_mk1');
         }
 
         // 初始化标记
         this.isActivelyMining = false;
 
-        if (hasMinerBeam) {
+        if (minerWeapon) {
             const InventoryManager = (window as any).InventoryManager;
             let currentFrag = InventoryManager ? InventoryManager.getInventory(this.id)['asteroid_fragment'] || 0 : 0;
             const isFull = currentFrag >= this.maxInventory; // TODO: 使用统一的容量逻辑，这里暂时保留旧的粗略判定避免报错
@@ -307,12 +309,16 @@ export class Ship {
                 this.isActivelyMining = true; // 告诉前端画吸收特效
                 this._miningTimer += dt;
                 
-                // 假设每 2 秒产出 1 个小行星碎块
-                if (this._miningTimer >= 2.0) {
+                // 读取武器配置，如果没有配置则使用默认值
+                const fireRate = minerWeapon.stats.fireRate || 3.0;
+                const yieldAmount = minerWeapon.stats.miningYield || 100;
+                
+                // 每 fireRate 秒产出 yieldAmount 个小行星碎块
+                if (this._miningTimer >= fireRate) {
                     this._miningTimer = 0;
                     const InventoryManager = (window as any).InventoryManager;
                     if (InventoryManager) {
-                        InventoryManager.addCargo(this.id, 'asteroid_fragment', 1);
+                        InventoryManager.addCargo(this.id, 'asteroid_fragment', yieldAmount);
                     }
                 }
             }
@@ -324,9 +330,24 @@ export class Ship {
             // MINE 类型且满载时，在 OOS/宏观层级也会被标记为返航
             if (this.droneType === 'MINE') {
                 const InventoryManager = (window as any).InventoryManager;
-                const currentFrag = InventoryManager ? InventoryManager.getInventory(this.id)['asteroid_fragment'] || 0 : 0;
-                const isFull = currentFrag >= this.maxInventory;
+                const inv = InventoryManager ? InventoryManager.getInventory(this.id) : {};
+                const currentFrag = inv['asteroid_fragment'] || 0;
+                
+                // 修复：由于底盘默认可能 maxInventory 为 0，导致出舱 0 >= 0 瞬间判定满载
+                const capacity = this.maxInventory > 0 ? this.maxInventory : 10;
+                const isFull = currentFrag >= capacity;
+                
+                // [加入调试信息] 检查采矿无人机的容量和当前挂载状态
+                if (!this._mineDebugLog) {
+                    console.warn(`[采矿调试] 无人机出生 -> ID: ${this.id}, 当前矿石: ${currentFrag}, 货舱上限 capacity: ${capacity}, 是否已满载 isFull: ${isFull}`);
+                    this._mineDebugLog = true;
+                }
+
                 if (isFull) {
+                    if (!this._mineFullLog) {
+                        console.warn(`[采矿调试] 无人机 ID: ${this.id} 触发满载返航。`);
+                        this._mineFullLog = true;
+                    }
                     this.isReturning = true;
                 } else if (!this.isReturning) {
                     // 只有在没有被其他逻辑（如闲置超时）标记返航时才重置
@@ -380,8 +401,6 @@ export class Ship {
                     const distToParent = Math.hypot(parentShip.location.x - this.location.x, parentShip.location.y - this.location.y);
                     // 当距离极近（放宽到小于 50 像素，方便微观物理引擎结算），触发回收
                     if (distToParent < 50) {
-                        console.log(`[无人机] ${this.id} (类型: ${this.droneType}) 已返回母体，转移物资并回收...`);
-                        
                         // 1. 转移肚子里所有可能的物资 (如小行星碎块)
                         const InventoryManager = (window as any).InventoryManager;
                         if (InventoryManager) {
@@ -389,7 +408,6 @@ export class Ship {
                             for (const good in myInv) {
                                 if (myInv[good] > 0) {
                                     InventoryManager.transfer(this.id, parentShip.id || parentShip.uid, good, myInv[good]);
-                                    console.log(`[物流调试 - F12] 无人机收回物资 ${good} x${myInv[good]}，已存入母体货舱！`);
                                 }
                             }
                         }
@@ -401,7 +419,6 @@ export class Ship {
                                 parentShip.droneStates[this.sourceSlotId] = 'IDLE';
                                 if (parentShip.activeDrones) delete parentShip.activeDrones[this.sourceSlotId];
                             }
-                            console.log(`[无人机] 已收回至母体槽位 ${this.sourceSlotId}`);
                             
                             // 触发 UI 刷新，让面板上的“返航中...”变回“出击”
                             if (typeof window !== 'undefined' && document) {
@@ -415,7 +432,6 @@ export class Ship {
                             
                             if (InventoryManager) {
                                 InventoryManager.addCargo(parentShip.id || parentShip.uid, droneItemKey, 1);
-                                console.log(`[物流调试 - F12] 无人机本体 ${droneItemKey} x1，已收回至母体货舱！`);
                             }
                         }
 
@@ -972,7 +988,6 @@ export class ShipManager {
             loadout: actualLoadout
         });
 
-        console.log(`[ShipManager] 成功生成了一架 ${droneType} 型无人机 (母体: ${parentId}), ID: ${drone.id}`);
         return drone;
     }
 
@@ -1069,7 +1084,6 @@ export class ShipManager {
         parent.activeDrones[slotId] = drone.id;
         parent.droneStates[slotId] = 'WORKING';
         
-        console.log(`[ShipManager] 槽位 ${slotId} 释放无人机: ${drone.id}`);
         this.save();
         
         document.dispatchEvent(new Event('DRONE_STATE_CHANGED'));
@@ -1199,4 +1213,8 @@ export class ShipManager {
             playerData.stats.hp = playerData.stats.maxHp;
         }
     }
+}
+
+if (typeof window !== 'undefined') {
+    (window as any).ShipManager = ShipManager;
 }

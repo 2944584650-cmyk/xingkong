@@ -11,9 +11,14 @@ import App from './App';
 import './styles/global.css';
 
 // 渲染 React UI 覆盖层
+let root = (window as any).__REACT_ROOT__;
 const rootElement = document.getElementById('react-root');
 if (rootElement) {
-    createRoot(rootElement).render(<App />);
+    if (!root) {
+        root = createRoot(rootElement);
+        (window as any).__REACT_ROOT__ = root;
+    }
+    root.render(<App />);
 }
 
 const config = {

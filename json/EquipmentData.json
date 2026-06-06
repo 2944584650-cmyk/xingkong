@@ -1052,7 +1052,7 @@
             "baseHp": 30,
             "mass": 2,
             "drag": 0.95,
-            "maxInventory": 50,
+            "maxInventory": 300,
             "areas": [],
             "slots": {
                 "W1": {
@@ -1417,7 +1417,7 @@
                 "attack": 0,
                 "miningYield": 100,
                 "range": 200,
-                "fireRate": 0.5,
+                "fireRate": 3,
                 "energyCost": 0,
                 "color": "#ffff00"
             },

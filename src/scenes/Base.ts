@@ -236,12 +236,23 @@ export class Base extends Phaser.Scene {
                 // 点击时在 F12 打印该实体的装备与属性细节
                 console.log(`=== 选中实体: ${detail.targetShip.id} ===`);
                 console.log("微观实体数据:", detail.targetShip);
+                console.log("== 【容量排查】 ==");
+                console.log("这艘船底盘ID是: ", detail.targetShip.hullId || (detail.targetShip.shipRef && detail.targetShip.shipRef.hullId));
+                console.log("微观实体的 maxInventory 是: ", detail.targetShip.maxInventory);
                 if (detail.targetShip.shipRef) {
+                    console.log("宏观对象(shipRef) 的 maxInventory 是: ", detail.targetShip.shipRef.maxInventory);
                     console.log("宏观对象(shipRef):", detail.targetShip.shipRef);
                     console.log("挂载的武器(activeWeapons):", detail.targetShip.shipRef.activeWeapons);
                 } else {
                     console.warn("注意：该实体没有绑定 shipRef，将无法开火或被保存！");
                 }
+                
+                // 为了万无一失，直接用我刚刚修复好的函数再算一遍：
+                if (typeof window !== 'undefined' && (window as any).InventoryManager) {
+                    const finalCap = (window as any).InventoryManager.getCapacity(detail.targetShip.id, detail.targetShip);
+                    console.log("InventoryManager算出来的最终容量是: ", finalCap);
+                }
+                console.log("==================");
 
                 // 如果按住了 Shift，则多选，否则单选
                 const shiftKey = this.input.keyboard.checkDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT));
@@ -1297,7 +1308,7 @@ export class Base extends Phaser.Scene {
 
             // [新增] 无人机存活检查：必须有 parentId，且父实体必须存活于当前星区，否则2秒后自毁
             if (ent.type === 'drone') {
-                if (!checkDroneSurvival(ent, allShipsList)) {
+                if (!checkDroneSurvival(ent, allShipsList, this.sectorSimulations[simSectorName]?.asteroids)) {
                     if (ent.droneDieTimer === undefined) {
                         ent.droneDieTimer = 2.0;
                     }
@@ -1668,6 +1679,10 @@ export class Base extends Phaser.Scene {
                     if (ent.shipRef.location.sector === simSectorName) {
                         cmdTargetPos = { x: ent.shipRef.moveTarget.x, y: ent.shipRef.moveTarget.y };
                     }
+                }
+                else if (ent.shipRef.commandState === 'MINING' && ent.miningTargetPos) {
+                    cmdType = 'MINE';
+                    cmdTargetPos = { x: ent.miningTargetPos.x, y: ent.miningTargetPos.y };
                 }
                 else if (ent.shipRef.state === 'DEPARTURE' || ent.shipRef.state === 'TRANSIT') {
                     cmdType = 'MOVE';

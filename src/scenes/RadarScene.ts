@@ -784,6 +784,7 @@ export class RadarScene extends (window as any).Phaser.Scene {
                 if (type === 'ATTACK') baseColor = 0xff3333; // 攻击红色
                 else if (type === 'DEFEND') baseColor = 0x00aaff; // 护卫蓝色
                 else if (type === 'FOLLOW') baseColor = 0xffaa00; // 跟随橙色
+                else if (type === 'MINE') baseColor = 0xffff00; // 采矿黄色
 
                 // 如果未被选中（比如是AI的，或者是没框选的己方单位），降低透明度，避免满屏乱七八糟
                 const alpha = isSelected ? 0.6 : 0.15;
