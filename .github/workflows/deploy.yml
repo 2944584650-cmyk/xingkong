@@ -36,6 +36,12 @@ jobs:
       - name: Build
         run: npm run build
         
+      - name: Copy static assets
+        run: |
+          cp phaser.js dist/
+          cp -r assets dist/
+          cp -r json dist/
+          
       - name: Setup Pages
         uses: actions/configure-pages@v4
         
