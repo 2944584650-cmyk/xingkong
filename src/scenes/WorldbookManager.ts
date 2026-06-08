@@ -6,6 +6,7 @@ import { processMacroOrders } from './worldbook/Worldbook-Orders.js';
 import { getGlobalInternalModulesPool } from './worldbook/Worldbook-InternalModules.js';
 import { InternalModuleProcessor } from '../managers/building/InternalModuleProcessor.js';
 import { AffinityManager } from '../managers/AffinityManager.js';
+import { NPCManager } from '../managers/NPCManager.js';
 
 export class WorldbookManager {
     static sectors = [];
@@ -88,15 +89,26 @@ export class WorldbookManager {
             generateModule(m.moduleId, m.gridX, m.gridY, m.rotation, factionId, m.internalModules)
         ).filter((m: any) => m !== null);
 
+        // [NPC注入] 自动为新生成的空间站分配一个 NPC 拥有者
+        let ownerId: string | number = factionId;
+        if (factionId && factionId !== 0) {
+            ownerId = NPCManager.getInstance().assignOrGetNPCForEntity(factionId);
+        }
+
         const newStation = {
             uid: stationId,
             factionId: factionId,
+            ownerId: ownerId,
             worldX: worldX,
             worldY: worldY,
             type: templateType,
             sector: sectorName,
             modules: modules
         };
+
+        if (typeof ownerId === 'string' && ownerId !== 'player') {
+            NPCManager.getInstance().addOwnedShip(ownerId, stationId); // 复用 addOwnedShip 也能记录资产 (或者是 addOwnedBuilding)
+        }
 
         worldState.stations.push(newStation);
         this.saveWorldState(worldState);
@@ -265,15 +277,27 @@ export class WorldbookManager {
                     if (droneDock) modules.push(droneDock);
                 }
 
+                let ownerId: string | number = factionId;
+                if (factionId && factionId !== 0) {
+                    ownerId = NPCManager.getInstance().assignOrGetNPCForEntity(factionId);
+                }
+
                 defaultState.stations.push({
                     uid: stationId,
                     factionId: factionId,
+                    ownerId: ownerId,
                     worldX: Math.cos(angle) * distance,
                     worldY: Math.sin(angle) * distance,
                     type: stationType, // type 依然记录它偏向的工业类型
                     sector: sector.name,
                     modules: modules
                 });
+
+                if (typeof ownerId === 'string' && ownerId !== 'player') {
+                    // 初始化阶段记录其拥有者，注意其实目前只存了 id
+                    // 如果需要在NPC身上区分 ship 和 building，需在 NPCManager里用 addOwnedBuilding
+                    // 暂时这里为了简单，我们可以加在 npc 数据里（TODO 确保这在 NPCManager 被序列化）
+                }
             });
             
             // 每个阵营挑选所有的星区，并在每个星区生成多个矿带，总范围扩大5倍！

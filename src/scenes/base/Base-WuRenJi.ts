@@ -146,7 +146,7 @@ export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[], aste
             droneEnt._idleTimer = (droneEnt._idleTimer || 0) + 1;
             if (droneEnt._idleTimer > 300) { // 5秒 = 300帧
                 if (!droneEnt._mineIdleLog) {
-                    console.warn(`[采矿调试] 无人机 ID: ${droneEnt.id} 超过5秒未在附近发现小行星实体，触发闲置强制返航！`);
+                    // console.warn(`[采矿调试] 无人机 ID: ${droneEnt.id} 超过5秒未在附近发现小行星实体，触发闲置强制返航！`);
                     droneEnt._mineIdleLog = true;
                 }
                 isReturning = true;
@@ -162,7 +162,7 @@ export function handleMineDroneBehavior(droneEnt: any, allShipsList: any[], aste
     if (isReturning) {
         // --- 满载返航模式 / 无矿返航 ---
         if (!droneEnt._mineReturnLog) {
-            console.log(`[采矿调试] 无人机 ID: ${droneEnt.id} 开始执行返航机动，寻找母体: ${actualFlagship ? actualFlagship.id : '未知'}`);
+            // console.log(`[采矿调试] 无人机 ID: ${droneEnt.id} 开始执行返航机动，寻找母体: ${actualFlagship ? actualFlagship.id : '未知'}`);
             droneEnt._mineReturnLog = true;
         }
         handleDroneReturnToMothership(droneEnt, actualFlagship, { isUrgentReturn: true });

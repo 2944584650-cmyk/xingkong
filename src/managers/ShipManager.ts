@@ -4,11 +4,30 @@ import { OOSSimulator } from './OOSSimulator.js';
 import { ShipDecision, ShipExecution } from './ship/ShipDecision.js';
 import { BuildingManager, GRID_PIXEL_SIZE } from './BuildingManager.js';
 import { triggerWarp } from './oos/OOS-Travel.js';
+import { ShipData } from '../data/ShipData.js';
+import { NPCManager } from './NPCManager.js';
 
-export class Ship {
+export class Ship implements ShipData {
+    id!: string;
+    name!: string;
+    ownerId!: string;
+    factionId!: number;
+    type!: string;
+    size!: string;
+    hullId!: string;
+    loadout!: Record<string, string>;
+    maxInventory!: number;
+    state!: ShipData['state'];
+    location!: { sector: string; x: number; y: number; };
+    rotation!: number;
+    stats!: { hp: number; maxHp: number; mass: number; drag: number; thrust: number; turnThrust: number; hpRegen: number; speed?: number; };
+    orderQueue!: any[];
+    taskStack!: any[];
+    combatTimer!: number;
+
     [key: string]: any;
     
-    constructor(data) {
+    constructor(data: any) {
         this.id = data.id || `ship_${Date.now()}_${Math.floor(Math.random()*1000)}`;
         this.name = data.name || `未命名舰船 ${this.id.substr(-4)}`;
         
@@ -123,6 +142,7 @@ export class Ship {
             drag: hullDef ? (hullDef.drag || 0.15) : 0.15,
             thrust: 0,
             turnThrust: 0,
+            hpRegen: 0,
             speed: 0 // 已废弃，但为了向下兼容某些UI暂留
         };
         
@@ -338,16 +358,16 @@ export class Ship {
                 const isFull = currentFrag >= capacity;
                 
                 // [加入调试信息] 检查采矿无人机的容量和当前挂载状态
-                if (!this._mineDebugLog) {
-                    console.warn(`[采矿调试] 无人机出生 -> ID: ${this.id}, 当前矿石: ${currentFrag}, 货舱上限 capacity: ${capacity}, 是否已满载 isFull: ${isFull}`);
-                    this._mineDebugLog = true;
-                }
+                // if (!this._mineDebugLog) {
+                //     console.warn(`[采矿调试] 无人机出生 -> ID: ${this.id}, 当前矿石: ${currentFrag}, 货舱上限 capacity: ${capacity}, 是否已满载 isFull: ${isFull}`);
+                //     this._mineDebugLog = true;
+                // }
 
                 if (isFull) {
-                    if (!this._mineFullLog) {
-                        console.warn(`[采矿调试] 无人机 ID: ${this.id} 触发满载返航。`);
-                        this._mineFullLog = true;
-                    }
+                    // if (!this._mineFullLog) {
+                    //     console.warn(`[采矿调试] 无人机 ID: ${this.id} 触发满载返航。`);
+                    //     this._mineFullLog = true;
+                    // }
                     this.isReturning = true;
                 } else if (!this.isReturning) {
                     // 只有在没有被其他逻辑（如闲置超时）标记返航时才重置
@@ -374,11 +394,17 @@ export class Ship {
                                 location: { x: worldX, y: worldY },
                                 ownerId: 'player', // 默认建筑模块目前都属于玩家
                                 addCargo: (good: string, amount: number) => {
-                                    // 真正将物资存入建筑模块自身库存，移除转移给玩家飞船的兜底逻辑
-                                    if (!mod.inventory) mod.inventory = {};
-                                    if (!mod.inventory[good]) mod.inventory[good] = 0;
-                                    mod.inventory[good] += amount;
-                                    console.log(`[建筑物流 - F12] 无人机物资 ${good} x${amount} 已成功存入建筑模块 (UID:${mod.uid}) 的货舱内！`);
+                                    // [修复]: 建筑无人机返航时，也将物资存入总站公库
+                                    const targetStationUid = mod.stationUid || mod.uid;
+                                    
+                                    const InventoryManager = (window as any).InventoryManager;
+                                    if (InventoryManager) {
+                                        // 强制使用统一的 API 将物资存入空间站公库，不再允许模块私自生成库存
+                                        InventoryManager.addCargo(targetStationUid, good, amount, mod);
+                                        console.log(`[建筑物流 - F12] 无人机物资 ${good} x${amount} 已存入空间站公库 (UID:${targetStationUid})`);
+                                    } else {
+                                        console.warn(`[建筑物流] 缺少 InventoryManager，物资 ${good} x${amount} 转移失败。`);
+                                    }
                                     
                                     // 尝试保存并刷新前端状态
                                     if (typeof bm.save === 'function') {
@@ -457,7 +483,13 @@ export class Ship {
         }
 
         if (this.state === 'DOCKED') {
-            return; // 完全解耦：处于停泊状态的飞船不参与任何宏观或微观的行为更新
+            // [修复]: 处于停泊状态的飞船不参与物理更新，但它的“任务大脑”依然需要流转（比如转移货物）
+            // 否则在物理停泊完成那一刻弹出 DOCK 任务后，它就会在这里被永远短路，无法执行 TRANSFER_CARGO
+            if (this.taskStack && this.taskStack.length > 0) {
+                const currentTask = this.taskStack[0];
+                ShipExecution.executeAtomicTask(this, currentTask, dt, worldState);
+            }
+            return; 
         }
 
         // --- OOS 引擎接管纯后台推演 ---
@@ -520,10 +552,10 @@ export class Ship {
 }
 
 export class ShipManager {
-    static ships = [];
-    static dockingRegistries = {}; // Map<HostID, Set<ShipID>> 内存级索引，不直接序列化，而是init时重建
-    static activeSimulationSectors = []; // 新增：当前正在被前端全量物理模拟的星区
-    static fleets = []; // 新增：存储NPC阵营的宏观舰队编制
+    static ships: Ship[] = [];
+    static dockingRegistries: Record<string, Set<string>> = {}; // Map<HostID, Set<ShipID>> 内存级索引，不直接序列化，而是init时重建
+    static activeSimulationSectors: string[] = []; // 新增：当前正在被前端全量物理模拟的星区
+    static fleets: any[] = []; // 新增：存储NPC阵营的宏观舰队编制
 
     static reset() {
         this.ships = [];
@@ -658,13 +690,31 @@ export class ShipManager {
     }
 
     static createShip(template) {
+        // [NPC注入] 如果没有明确指定 ownerId，并且不是玩家的船，且有 factionId
+        if (template.ownerId === undefined && template.factionId !== undefined && template.factionId !== 0 && template.factionId !== '0') {
+            const npcId = NPCManager.getInstance().assignOrGetNPCForEntity(template.factionId);
+            template.ownerId = npcId;
+        }
+
         const ship = new Ship(template);
+        
+        // 注册到 NPC 资产中
+        if (ship.ownerId && ship.ownerId !== 'player' && isNaN(Number(ship.ownerId))) {
+            NPCManager.getInstance().addOwnedShip(ship.ownerId, ship.id);
+        }
+
         this.ships.push(ship);
         this.save();
         return ship;
     }
 
     static removeShip(shipId) {
+        const ship = this.getShipById(shipId);
+        if (ship && ship.ownerId && ship.ownerId !== 'player' && isNaN(Number(ship.ownerId))) {
+            // 从 NPC 名下移除
+            NPCManager.getInstance().removeOwnedShip(ship.ownerId, shipId);
+        }
+
         this.ships = this.ships.filter(s => s.id !== shipId);
         this.save();
     }
@@ -779,7 +829,7 @@ export class ShipManager {
         return this.ships.filter(s => s.state === 'WARP' && s.currentLane);
     }
 
-    static getVisibleTransitsInSector(sectorName) {
+    static getVisibleTransitsInSector(sectorName: string) {
         return this.ships.filter(s => 
             s.location.sector === sectorName && 
             (s.state === 'DEPARTURE' || s.state === 'TRANSIT' || s.state === 'ARRIVAL')

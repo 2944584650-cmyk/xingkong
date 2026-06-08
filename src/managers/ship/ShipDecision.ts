@@ -218,6 +218,7 @@ export class ShipExecution {
                 break;
                 
             case 'FIND_BASE_AND_UNLOAD': {
+                // console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 开始执行卸货指令：FIND_BASE_AND_UNLOAD`);
                 // 通用寻找空间站卸货的逻辑
                 const BuildingManager = (window as any).BuildingManager;
                 if (!BuildingManager) {
@@ -228,11 +229,8 @@ export class ShipExecution {
                 const allModules = BuildingManager.getAllModules();
                 
                 // 初步筛选（不限制阵营）
-                // 所有船都不找玩家基地，统一找 NPC 基地卸货停泊
-                const myBases = allModules.filter((m: any) => {
-                    const isPlayerBase = m.ownerId === 'player';
-                    return !isPlayerBase;
-                });
+                // 目前允许找任何基地卸货停泊
+                const myBases = allModules;
                 
                 if (myBases.length > 0) {
                     // 暂且选同星区最近的，或者第一个
@@ -246,10 +244,22 @@ export class ShipExecution {
                     
                     // 将停泊和卸货任务压入栈
                     ship.taskStack.unshift({ action: 'TRANSFER_CARGO', targetBaseUid: targetBase.uid });
+                    console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: TRANSFER_CARGO, 目标基地 UID: ${targetBase.uid}`);
+                    
                     ship.taskStack.unshift({ action: 'DOCK_AT_STATION', targetBaseUid: targetBase.uid });
+                    console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: DOCK_AT_STATION, 目标基地 UID: ${targetBase.uid}`);
+                    
+                    // 【关键修复】：只压入任务是不够的，还需要触发底层的泊位申请，让物理层知道该去哪
+                    document.dispatchEvent(new CustomEvent('ui_apply_docking', {
+                        detail: {
+                            moduleId: targetBase.uid,
+                            shipId: ship.id
+                        }
+                    }));
                     
                     if (targetBase.sector !== ship.location.sector) {
                         ship.taskStack.unshift({ action: 'JUMP_TO_SECTOR', target: targetBase.sector });
+                        console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: JUMP_TO_SECTOR, 目标星区: ${targetBase.sector}`);
                     }
                     
                 } else {
@@ -264,27 +274,85 @@ export class ShipExecution {
             }
 
             case 'TRANSFER_CARGO': {
-                // 抵达星区并停泊后，进行卸货操作
+                console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 开始执行 TRANSFER_CARGO`);
                 const targetBaseUid = task.targetBaseUid;
                 const BuildingManager = (window as any).BuildingManager;
                 const InventoryManager = (window as any).InventoryManager;
                 
-                if (BuildingManager && InventoryManager) {
-                    const mod = BuildingManager.getAllModules().find((m: any) => m.uid === targetBaseUid);
-                    if (mod && mod.sector === ship.location.sector) {
-                        const myInv = InventoryManager.getInventory(ship.id);
-                        for (const good in myInv) {
-                            if (myInv[good] > 0) {
-                                if (!mod.inventory) mod.inventory = {};
-                                if (!mod.inventory[good]) mod.inventory[good] = 0;
-                                mod.inventory[good] += myInv[good];
-                                console.log(`[物流] 船只 ${ship.name} 卸货 ${good} x${myInv[good]} 到建筑 ${mod.uid}`);
-                                InventoryManager.removeCargo(ship.id, good, myInv[good]);
+                if (!BuildingManager || !InventoryManager) {
+                    console.log(`[F12 调试] 缺少 BuildingManager 或 InventoryManager，无法卸货`);
+                    ship.taskStack.shift();
+                    break;
+                }
+
+                const mod = BuildingManager.getAllModules().find((m: any) => m.uid === targetBaseUid);
+                if (!mod) {
+                    console.log(`[F12 调试] 找不到目标基地 ${targetBaseUid}，无法卸货`);
+                    ship.taskStack.shift();
+                    break;
+                }
+
+                // [修复]: 统一存放到空间站的总公库，而不是具体停靠的单个模块库存
+                const targetStationUid = mod.stationUid || mod.uid; // 如果找不到 stationUid，兜底回退到模块自己
+
+                // 获取接收方的主人 ID
+                let stationOwnerId = mod.ownerId || 'player'; // 玩家自己建的建筑通常是 player
+                if (worldState && worldState.stations) {
+                    const stationObj = worldState.stations.find((s: any) => s.uid === targetStationUid);
+                    if (stationObj && stationObj.ownerId) {
+                        stationOwnerId = stationObj.ownerId;
+                    }
+                }
+
+                console.log(`[F12 调试] 目标建筑: ${mod.uid}, 归属空间站公库: ${targetStationUid}(属:${stationOwnerId}), 飞船星区: ${ship.location.sector}`);
+                
+                // 放宽限制：既然已经成功物理停泊，就不再强校验星区字符串是否严格相等
+                const myInv = InventoryManager.getInventory(ship.id);
+                console.log(`[F12 调试] 飞船当前库存:`, myInv);
+                
+                let transferred = false;
+                
+                // 动态导入所需的数据与服务
+                Promise.all([
+                    import('../../../json/ItemData.json').catch(() => ({ default: { ITEMS: {} } })),
+                    import('../NPCManager.js').catch(() => null)
+                ]).then(([itemDataModule, npcManagerModule]) => {
+                    const ItemData: any = itemDataModule.default || itemDataModule;
+                    const NPCManager = npcManagerModule ? npcManagerModule.NPCManager : null;
+
+                    for (const good in myInv) {
+                        if (myInv[good] > 0) {
+                            const amountToTransfer = myInv[good];
+                            // 统一通过 API 进行转移！这会自动处理增加容量、扣除来源、并保存本地缓存
+                            const actualTransferred = InventoryManager.transfer(ship.id, targetStationUid, good, amountToTransfer);
+                            
+                            if (actualTransferred > 0) {
+                                // [货币系统] 资金划转逻辑
+                                if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
+                                    let itemDef = ItemData.ITEMS ? ItemData.ITEMS[good] : null;
+                                    let price = itemDef ? (itemDef.basePrice || 10) : 10;
+                                    let totalValue = price * actualTransferred;
+                                    
+                                    // 卸货等于卖出，目标空间站主人是买方，飞船主人是卖方
+                                    // 暂使用强制划转，防止NPC没钱导致坏账（后续可引入破产机制）
+                                    NPCManager.getInstance().transferCredits(stationOwnerId, ship.ownerId, totalValue, true);
+                                    console.log(`[交易结算] 飞船 ${ship.name}(属:${ship.ownerId}) 向 基地 ${targetStationUid}(属:${stationOwnerId}) 卸货 ${good} x${actualTransferred}, 获得 ${totalValue} 信用币`);
+                                }
+
+                                console.log(`[物流] 船只 ${ship.name} 成功转移卸货 ${good} x${actualTransferred} 到空间站公库 ${targetStationUid}`);
+                                transferred = true;
+                            } else {
+                                console.log(`[物流] 船只 ${ship.name} 尝试转移 ${good} 失败 (可能目标 ${targetStationUid} 容量已满?)`);
                             }
                         }
                     }
-                }
-                ship.taskStack.shift();
+                    
+                    if (!transferred) {
+                        console.log(`[物流] 船只 ${ship.name} 卸货判定结束，没有发生任何转移。`);
+                    }
+                    
+                    ship.taskStack.shift();
+                });
                 break;
             }
 
@@ -294,7 +362,7 @@ export class ShipExecution {
                 // 1. 空矿检测
                 const hasAsteroids = worldState.asteroidBelts && worldState.asteroidBelts.some((b: any) => b.sector === ship.location.sector);
                 if (!hasAsteroids) {
-                    console.log(`[采矿调度] ${ship.name} 在 ${ship.location.sector} 未发现小行星带，直接中止采矿任务。`);
+                    // console.log(`[采矿调度] ${ship.name} 在 ${ship.location.sector} 未发现小行星带，直接中止采矿任务。`);
                     ship.taskStack.shift();
                     break;
                 }
@@ -306,7 +374,7 @@ export class ShipExecution {
                     const capacity = InventoryManager.getCapacity(ship.id);
                     
                     if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
-                        console.log(`[采矿] ${ship.name} 货舱容量已达80% (${currentCargo}/${capacity})，结束采矿任务。`);
+                        // console.log(`[采矿] ${ship.name} 货舱容量已达80% (${currentCargo}/${capacity})，结束采矿任务。`);
                         ship.taskStack.shift();
                         ship.commandState = null;
                         

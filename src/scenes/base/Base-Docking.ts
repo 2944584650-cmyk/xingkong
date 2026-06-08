@@ -47,6 +47,15 @@ export function checkDockingGuidance(ent: any): boolean {
                 berthRegistry[ent.id].status = 'DOCKED';
             }
 
+            // 推进飞船的任务栈：如果当前是停泊任务，则完成它
+            if (ent.shipRef && ent.shipRef.taskStack && ent.shipRef.taskStack.length > 0) {
+                const currentTask = ent.shipRef.taskStack[0];
+                if (currentTask.action === 'DOCK_AT_STATION') {
+                    console.log(`[停靠物理系统] 飞船 ${ent.shipRef.name} 物理吸附停靠完成，弹出任务 DOCK_AT_STATION`);
+                    ent.shipRef.taskStack.shift();
+                }
+            }
+
             // 通知 RadarScene 和 UI 引导完成
             document.dispatchEvent(new CustomEvent('ui_docking_completed', { detail: { shipId: ent.id, targetId: dockTarget.targetId } }));
             EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffaa;">[系统] 自动停泊程序执行完毕。舰船已成功接入端口。</div>` }));

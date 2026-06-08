@@ -1,12 +1,13 @@
 import { GameConfig } from '../config.js';
 import { ShipManager } from './ShipManager.js';
+import { PlayerData } from '../data/PlayerData';
 
 export class PlayerManager {
     /**
      * 获取玩家基本属性
      */
-    static getStats() {
-        let credits = parseInt(localStorage.getItem('player_credits'));
+    static getStats(): PlayerData {
+        let credits = parseInt(localStorage.getItem('player_credits') || '0');
         if (isNaN(credits)) credits = 0;
         
         // [测试福利] 移除强制兜底发钱逻辑，避免覆盖正常载入的存档数据
@@ -17,9 +18,13 @@ export class PlayerManager {
             localStorage.setItem('game_has_started', '1');
         }
 
-        let stats: any = {
+        let stats: Partial<PlayerData> = {
             credits: credits,
             hullId: localStorage.getItem('player_hull_id') || null,
+            gameHasStarted: !!localStorage.getItem('game_has_started'),
+            gameHasStartedV3: !!localStorage.getItem('game_has_started_v3'),
+            ownedComponents: [],
+            inventory: []
         };
         
         try {
@@ -34,6 +39,10 @@ export class PlayerManager {
         } catch(e) {
             stats.turretRules = {};
         }
+
+        // 统一在 getStats 中提取物品库存
+        stats.ownedComponents = this.getOwnedComponents();
+        stats.inventory = this.getInventory();
 
         // --- 多中队系统数据读取 (V3) ---
         try {
@@ -81,7 +90,9 @@ export class PlayerManager {
             stats.playerShipId = pShipId;
 
             // 修复 V2 时期留下的 isFlagship 脏数据
-            stats.ownedShips.forEach(s => { delete s.isFlagship; });
+            if (stats.ownedShips) {
+                stats.ownedShips.forEach((s: any) => { delete s.isFlagship; });
+            }
 
         } catch(e) {
             console.error('Fleet init error:', e);
@@ -113,7 +124,7 @@ export class PlayerManager {
                 if (!ship.cargo) ship.cargo = {}; // 初始化货舱数据
 
                 if (ship.slots) {
-                    Object.values(ship.slots).forEach(compId => {
+                    Object.values(ship.slots).forEach((compId) => {
                         const cDef = (GameConfig.COMPONENTS as Record<string, any>)[compId as string];
                         if (cDef) {
                             if (cDef.type === 'defense' && cDef.stats && cDef.stats.hpBonus) {
@@ -139,13 +150,13 @@ export class PlayerManager {
             });
         }
 
-        return stats;
+        return stats as PlayerData;
     }
 
     /**
      * 保存玩家基本属性
      */
-    static saveStats(data) {
+    static saveStats(data: Partial<PlayerData>) {
         // [核心修正] 任何对根节点的修改，必须同步回资产库中的实体
         // 确保 ownedShips 永远是唯一且最新的数据源
         if (data.playerShipId && data.ownedShips) {
@@ -157,7 +168,7 @@ export class PlayerManager {
             }
         }
 
-        if (data.credits !== undefined) localStorage.setItem('player_credits', data.credits);
+        if (data.credits !== undefined) localStorage.setItem('player_credits', data.credits.toString());
         
         // 彻底移除对 player_hull_id/slots/turretRules 的写入
         // 不再维护任何“双重真实”，杜绝脏数据污染
@@ -179,7 +190,7 @@ export class PlayerManager {
     /**
      * 兼容旧代码的 save 方法
      */
-    static save(data) {
+    static save(data: Partial<PlayerData>) {
         if (data) {
             this.saveStats(data);
         }
@@ -188,10 +199,10 @@ export class PlayerManager {
     /**
      * 更新单个属性
      */
-    static updateStat(key, delta) {
+    static updateStat(key: keyof PlayerData, delta: number) {
         const stats = this.getStats();
-        if (stats[key] !== undefined) {
-            stats[key] = Math.max(0, stats[key] + delta);
+        if (typeof stats[key] === 'number') {
+            (stats[key] as number) = Math.max(0, (stats[key] as number) + delta);
             this.saveStats(stats);
             return stats[key];
         }

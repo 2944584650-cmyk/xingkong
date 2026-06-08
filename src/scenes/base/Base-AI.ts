@@ -191,7 +191,7 @@ export function processAILogic(ent, allShipsList, dt, context) {
             // --- 节流的物理层 F12 调试 ---
             const now = Date.now();
             if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
-                console.log(`[物理层-采矿] 飞船 ${ent.id} 前往专属矿点(${ent.miningTargetPos.x.toFixed(0)}, ${ent.miningTargetPos.y.toFixed(0)}), 距离: ${distToMiningPos.toFixed(0)}`);
+                // console.log(`[物理层-采矿] 飞船 ${ent.id} 前往专属矿点(${ent.miningTargetPos.x.toFixed(0)}, ${ent.miningTargetPos.y.toFixed(0)}), 距离: ${distToMiningPos.toFixed(0)}`);
                 ent.lastDebugTime = now;
             }
             

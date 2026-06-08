@@ -3,26 +3,12 @@ import { GameConfig } from '../config.js';
 
 export const GRID_PIXEL_SIZE = 550; // 标准大网格尺寸（像素）
 
-export interface PlacedModule {
-    uid: string;
-    moduleId: string; // 对应 GameConfig.MODULES 的键，例如 'core_base' 或 'dock_berth'
-    gridX: number;    // 网格 X 坐标
-    gridY: number;    // 网格 Y 坐标
-    width: number;    // 占据的网格宽
-    height: number;   // 占据的网格高
-    rotation: number; // 旋转角度 0, 90, 180, 270
-    hp: number;       // 当前血量
-    maxHp: number;    // 最大血量
-    inventoryCapacity: number; // 最大库存容量
-    factionId?: string | number; // 建筑阵营标签
-    sector?: string;  // 模块所在的星区名称
-    stationUid?: string; // 归属的空间站ID
-    buildQueue?: any[]; // 建造队列
-    internalModules?: { [slotIndex: number]: { id: string, progress?: number } | null }; // 安装的内置模块 (null 表示空槽位)
-}
+import { PlacedModuleData, VirtualStationData } from '../data/BuildingData';
+
+export type PlacedModule = PlacedModuleData; // 向后兼容旧名称
 
 export class BuildingManager {
-    static stationModules: PlacedModule[] = [];
+    static stationModules: PlacedModuleData[] = [];
     static corePlaced: boolean = false;
 
     /**
@@ -469,7 +455,7 @@ export class BuildingManager {
      * 供仓储UI存取物资、或者飞船停泊系统挂靠使用。
      * @param targetUid 空间站 station_uid 或者内部任意一个 mod_uid
      */
-    static getStationAsVirtualShip(targetUid: string) {
+    static getStationAsVirtualShip(targetUid: string): VirtualStationData | null {
         if (!targetUid) return null;
         
         // 1. 找到对应的模块或空间站
