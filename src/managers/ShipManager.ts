@@ -529,7 +529,7 @@ export class Ship implements ShipData {
             }
 
             // 如果被上述分发逻辑赋予了跨星区路径，正式切入执行状态
-            if (this.path && this.path.length > 0 && this.state !== 'DEPARTURE') {
+            if (this.path && this.path.length > 0 && this.state !== ('DEPARTURE' as any)) {
                 this.state = 'DEPARTURE';
                 this.travelProgress = 0;
                 this.targetGate = this.path[0];
