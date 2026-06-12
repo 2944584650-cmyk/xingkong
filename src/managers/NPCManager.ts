@@ -192,6 +192,31 @@ export class NPCManager {
     }
 
     /**
+     * 宣告 NPC 物理死亡
+     */
+    public killNPC(id: string): boolean {
+        const npc = this.npcs.get(id);
+        if (!npc) return false;
+
+        npc.isDead = true;
+        // 如果想增加真实感，可以在这里处理其名下资产的遗产继承或无主化
+        // 但目前先简单地保留资产，只是人死了
+        emitUIEvent('npc-died', npc);
+        return true;
+    }
+
+    /**
+     * 更新 NPC 所在的物理位置 (例如登船)
+     */
+    public updateLocation(id: string, locationId: string): boolean {
+        const npc = this.npcs.get(id);
+        if (!npc) return false;
+        
+        npc.location = locationId;
+        return true;
+    }
+
+    /**
      * 生成各阵营风格的随机名称
      */
     public generateRandomName(factionId: string | number): string {
@@ -227,26 +252,19 @@ export class NPCManager {
     }
 
     /**
-     * 为实体分配一个NPC (从阵营中抽，如果没有或概率触发则新建)
+     * 为实体分配一个NPC (强制每次新建一个独立的 NPC)
      */
     public assignOrGetNPCForEntity(factionId: string | number): string {
         const fId = String(factionId);
-        const factionNPCs = Array.from(this.npcs.values()).filter(n => String(n.factionId) === fId);
         
-        // 30% 概率新建一个 NPC，或者该阵营没 NPC 的时候
-        if (factionNPCs.length === 0 || Math.random() < 0.3) {
-            const newNpcId = `npc_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-            this.createNPC({
-                id: newNpcId,
-                name: this.generateRandomName(fId),
-                factionId: fId,
-                credits: 1000 + Math.floor(Math.random() * 5000) // 随机一点初始启动资金
-            });
-            return newNpcId;
-        }
+        const newNpcId = `npc_${Date.now()}_${Math.floor(Math.random()*10000)}`;
+        this.createNPC({
+            id: newNpcId,
+            name: this.generateRandomName(fId),
+            factionId: fId,
+            credits: 1000 + Math.floor(Math.random() * 5000) // 随机一点初始启动资金
+        });
         
-        // 从已有的该阵营 NPC 中随机挑一个
-        const randomNpc = factionNPCs[Math.floor(Math.random() * factionNPCs.length)];
-        return randomNpc.id;
+        return newNpcId;
     }
 }

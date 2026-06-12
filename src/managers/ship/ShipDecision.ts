@@ -34,8 +34,8 @@ export class ShipDecision {
         // 判断1：如果货舱容量达到 80%，进入返航卸货流程
         if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
             // 所有船都应该有停泊卸货行为
-            ship.taskStack.push({ action: 'FIND_BASE_AND_UNLOAD' });
-            // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 容量达80%，压入任务: FIND_BASE_AND_UNLOAD`);
+            ship.taskStack.push({ action: 'FIND_BASE_AND_TRADE' });
+            // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 容量达80%，压入任务: FIND_BASE_AND_TRADE`);
             return;
         }
 
@@ -213,57 +213,149 @@ export class ShipExecution {
                 break;
                 
             case 'DOCK_AT_STATION':
-                ship.commandState = 'DOCK';
-                // 预留，当前端或 OOS 判定完成 docking 后，需要外部调用 ship.taskStack.shift()
+                if (ship.commandState !== 'DOCK') {
+                    ship.commandState = 'DOCK';
+                    ship.commandTargetId = task.targetBaseUid; // 确保 OOS/物理层 能知道目标建筑的 UID
+                    
+                    // 发送事件，由 Base-Docking.ts 统一处理分配泊位和物理引导
+                    if (typeof document !== 'undefined') {
+                        document.dispatchEvent(new CustomEvent('ui_apply_docking', { 
+                            detail: { moduleId: task.targetBaseUid, shipId: ship.id } 
+                        }));
+                    }
+                }
+                break;
+
+            case 'UNDOCK_FROM_STATION':
+                import('../ShipManager.js').then(module => {
+                    module.ShipManager.undockShip(ship.id);
+                    ship.commandState = null;
+                    ship.taskStack.shift();
+                });
                 break;
                 
-            case 'FIND_BASE_AND_UNLOAD': {
-                // console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 开始执行卸货指令：FIND_BASE_AND_UNLOAD`);
-                // 通用寻找空间站卸货的逻辑
+            case 'FIND_BASE_AND_TRADE': {
                 const BuildingManager = (window as any).BuildingManager;
-                if (!BuildingManager) {
+                const InventoryManager = (window as any).InventoryManager;
+                if (!BuildingManager || !InventoryManager) {
                     ship.taskStack.shift();
                     break;
                 }
                 
                 const allModules = BuildingManager.getAllModules();
-                
-                // 初步筛选（不限制阵营）
-                // 目前允许找任何基地卸货停泊
                 const myBases = allModules;
                 
                 if (myBases.length > 0) {
-                    // 暂且选同星区最近的，或者第一个
-                    let targetBase = myBases.find((m: any) => m.sector === ship.location.sector);
+                    let targetBase = null;
+                    let explicitTradeList = task.tradeList || null; // 允许从上一层透传 tradeList
+                    
+                    // --- 第一优先级：智能订单撮合 ---
+                    // 如果飞船身上有货（矿船、满载货船等），去 worldState.orders 里找有没有基地发布了对应的收购(BUY)订单
+                    const myInv = InventoryManager.getInventory(ship.id);
+                    const myGoods = Object.keys(myInv).filter(good => myInv[good] > 0);
+                    
+                    if (myGoods.length > 0 && worldState && worldState.orders) {
+                        // 寻找一个匹配的 TRANSPORT 物资补给订单
+                        const matchingOrder = worldState.orders.find((o: any) => {
+                            if (o.type === 'TRANSPORT' && o.status === 'PENDING' && o.payload && o.payload.targetSector) {
+                                // 检查飞船身上是否带有订单需要的物资 (cargoType)
+                                return myGoods.includes(o.payload.cargoType);
+                            }
+                            return false;
+                        });
+
+                        if (matchingOrder) {
+                            // TRANSPORT 订单的 targetSector 其实记录的是 stationUid
+                            const stationUid = matchingOrder.payload.targetSector;
+                            
+                            // 全局检索该空间站 (不再局限于当前星区的 myBases)
+                            if (worldState && worldState.stations) {
+                                const globalStation = worldState.stations.find((s: any) => s.uid === stationUid);
+                                if (globalStation) {
+                                    // 伪造一个 targetBase 对象，为了兼容后续的 `JUMP_TO_SECTOR` 等操作
+                                    targetBase = {
+                                        uid: stationUid,
+                                        sector: globalStation.sector
+                                    };
+                                    
+                                    // 根据订单生成底层的贸易清单（飞船视角的卖出 sell）
+                                    explicitTradeList = [{
+                                        good: matchingOrder.payload.cargoType,
+                                        amount: matchingOrder.payload.amount || 9999, // 尽量补足订单数量
+                                        type: 'sell' 
+                                    }];
+                                    console.log(`[订单撮合] 飞船 ${ship.name} 匹配到 ${matchingOrder.payload.cargoType} 的补给单，准备跨星区前往基地 ${stationUid} (位于 ${globalStation.sector})`);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // --- 第二优先级：按内部工厂配方智能兜底 (Push 机制) ---
                     if (!targetBase) {
-                        targetBase = myBases[0];
+                        const localBases = myBases.filter((m: any) => m.sector === ship.location.sector);
+                        const INTERNAL_MODULES = (window as any).GameConfig?.INTERNAL_MODULES || {};
+                        
+                        // 尝试在本地星区寻找那些“内部挂载了能消耗我货物的工厂”的空间站
+                        for (const base of localBases) {
+                            if (base.internalModules) {
+                                let matchFound = false;
+                                
+                                for (const slot in base.internalModules) {
+                                    const internalModId = base.internalModules[slot];
+                                    if (internalModId && INTERNAL_MODULES[internalModId]) {
+                                        const modDef = INTERNAL_MODULES[internalModId];
+                                        if (modDef.recipe && modDef.recipe.inputs) {
+                                            // 检查该工厂的输入原料是否包含飞船当前携带的货物
+                                            for (const good of myGoods) {
+                                                if (modDef.recipe.inputs[good] !== undefined) {
+                                                    targetBase = base;
+                                                    explicitTradeList = [{
+                                                        good: good,
+                                                        amount: 9999, // 尽量全部倾销
+                                                        type: 'sell'
+                                                    }];
+                                                    console.log(`[智能配方兜底] 飞船 ${ship.name} 根据配方需求强行锁定了基地 ${base.uid} (内部工厂: ${internalModId} 需要 ${good})`);
+                                                    matchFound = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (matchFound) break;
+                                }
+                                if (matchFound) break;
+                            }
+                        }
+
+                        // 如果连能消耗货物的工厂都找不到，彻底退化为随便找个地方停靠 (极大概率货物会被拒收保留)
+                        if (!targetBase) {
+                            targetBase = localBases.length > 0 ? localBases[0] : myBases[0];
+                            console.log(`[智能配方兜底] 飞船 ${ship.name} 在星区内找不到任何消耗自身货物的工厂，退化为停靠在 ${targetBase?.uid}`);
+                        }
                     }
                     
                     // 移除当前任务
                     ship.taskStack.shift();
                     
-                    // 将停泊和卸货任务压入栈
-                    ship.taskStack.unshift({ action: 'TRANSFER_CARGO', targetBaseUid: targetBase.uid });
-                    console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: TRANSFER_CARGO, 目标基地 UID: ${targetBase.uid}`);
+                    // 追加离港任务
+                    ship.taskStack.unshift({ action: 'UNDOCK_FROM_STATION' });
+                    
+                    // 将停泊和交易任务压入栈
+                    ship.taskStack.unshift({ 
+                        action: 'TRADE_CARGO', 
+                        targetBaseUid: targetBase.uid, 
+                        tradeList: explicitTradeList
+                    });
                     
                     ship.taskStack.unshift({ action: 'DOCK_AT_STATION', targetBaseUid: targetBase.uid });
-                    console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: DOCK_AT_STATION, 目标基地 UID: ${targetBase.uid}`);
                     
-                    // 【关键修复】：只压入任务是不够的，还需要触发底层的泊位申请，让物理层知道该去哪
-                    document.dispatchEvent(new CustomEvent('ui_apply_docking', {
-                        detail: {
-                            moduleId: targetBase.uid,
-                            shipId: ship.id
-                        }
-                    }));
-                    
+                    // 如果跨星区，把跳跃任务压在最上面，确保先跳跃，到了之后再触发 DOCK_AT_STATION 申请泊位
                     if (targetBase.sector !== ship.location.sector) {
                         ship.taskStack.unshift({ action: 'JUMP_TO_SECTOR', target: targetBase.sector });
-                        console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 已向任务栈压入: JUMP_TO_SECTOR, 目标星区: ${targetBase.sector}`);
                     }
                     
                 } else {
-                    console.log(`[物流] 船只 ${ship.name} 找不到适合的卸货点，原地丢弃货物。`);
+                    console.log(`[物流] 船只 ${ship.name} 找不到适合的交易点，原地丢弃货物。`);
                     const InventoryManager = (window as any).InventoryManager;
                     if (InventoryManager) {
                         InventoryManager.clearInventory(ship.id);
@@ -273,30 +365,28 @@ export class ShipExecution {
                 break;
             }
 
-            case 'TRANSFER_CARGO': {
-                console.log(`[F12 调试] 飞船 ${ship.name} (ID: ${ship.id}) 开始执行 TRANSFER_CARGO`);
+            case 'TRADE_CARGO': {
                 const targetBaseUid = task.targetBaseUid;
+                const tradeList = task.tradeList;
+                
                 const BuildingManager = (window as any).BuildingManager;
                 const InventoryManager = (window as any).InventoryManager;
                 
                 if (!BuildingManager || !InventoryManager) {
-                    console.log(`[F12 调试] 缺少 BuildingManager 或 InventoryManager，无法卸货`);
                     ship.taskStack.shift();
                     break;
                 }
 
                 const mod = BuildingManager.getAllModules().find((m: any) => m.uid === targetBaseUid);
-                if (!mod) {
-                    console.log(`[F12 调试] 找不到目标基地 ${targetBaseUid}，无法卸货`);
-                    ship.taskStack.shift();
-                    break;
+
+                // 统一存放到空间站的总公库 (如果模块不在本地，直接使用目标 UID)
+                let targetStationUid = targetBaseUid;
+                let stationOwnerId = 'player';
+
+                if (mod) {
+                    targetStationUid = mod.stationUid || mod.uid;
+                    stationOwnerId = mod.ownerId || 'player';
                 }
-
-                // [修复]: 统一存放到空间站的总公库，而不是具体停靠的单个模块库存
-                const targetStationUid = mod.stationUid || mod.uid; // 如果找不到 stationUid，兜底回退到模块自己
-
-                // 获取接收方的主人 ID
-                let stationOwnerId = mod.ownerId || 'player'; // 玩家自己建的建筑通常是 player
                 if (worldState && worldState.stations) {
                     const stationObj = worldState.stations.find((s: any) => s.uid === targetStationUid);
                     if (stationObj && stationObj.ownerId) {
@@ -304,15 +394,8 @@ export class ShipExecution {
                     }
                 }
 
-                console.log(`[F12 调试] 目标建筑: ${mod.uid}, 归属空间站公库: ${targetStationUid}(属:${stationOwnerId}), 飞船星区: ${ship.location.sector}`);
-                
-                // 放宽限制：既然已经成功物理停泊，就不再强校验星区字符串是否严格相等
-                const myInv = InventoryManager.getInventory(ship.id);
-                console.log(`[F12 调试] 飞船当前库存:`, myInv);
-                
                 let transferred = false;
                 
-                // 动态导入所需的数据与服务
                 Promise.all([
                     import('../../../json/ItemData.json').catch(() => ({ default: { ITEMS: {} } })),
                     import('../NPCManager.js').catch(() => null)
@@ -320,35 +403,57 @@ export class ShipExecution {
                     const ItemData: any = itemDataModule.default || itemDataModule;
                     const NPCManager = npcManagerModule ? npcManagerModule.NPCManager : null;
 
-                    for (const good in myInv) {
-                        if (myInv[good] > 0) {
-                            const amountToTransfer = myInv[good];
-                            // 统一通过 API 进行转移！这会自动处理增加容量、扣除来源、并保存本地缓存
-                            const actualTransferred = InventoryManager.transfer(ship.id, targetStationUid, good, amountToTransfer);
-                            
-                            if (actualTransferred > 0) {
-                                // [货币系统] 资金划转逻辑
-                                if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
-                                    let itemDef = ItemData.ITEMS ? ItemData.ITEMS[good] : null;
-                                    let price = itemDef ? (itemDef.basePrice || 10) : 10;
-                                    let totalValue = price * actualTransferred;
-                                    
-                                    // 卸货等于卖出，目标空间站主人是买方，飞船主人是卖方
-                                    // 暂使用强制划转，防止NPC没钱导致坏账（后续可引入破产机制）
-                                    NPCManager.getInstance().transferCredits(stationOwnerId, ship.ownerId, totalValue, true);
-                                    console.log(`[交易结算] 飞船 ${ship.name}(属:${ship.ownerId}) 向 基地 ${targetStationUid}(属:${stationOwnerId}) 卸货 ${good} x${actualTransferred}, 获得 ${totalValue} 信用币`);
+                    if (tradeList && Array.isArray(tradeList) && tradeList.length > 0) {
+                        // 【清单交易模式】
+                        tradeList.forEach((trade: any) => {
+                            if (trade.type === 'sell') {
+                                // 卖给空间站: 飞船 -> 空间站
+                                const actualTransferred = InventoryManager.transfer(ship.id, targetStationUid, trade.good, trade.amount);
+                                if (actualTransferred > 0) {
+                                    if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
+                                        let itemDef = ItemData.ITEMS ? ItemData.ITEMS[trade.good] : null;
+                                        let price = itemDef ? (itemDef.basePrice || 10) : 10;
+                                        let totalValue = price * actualTransferred;
+                                        NPCManager.getInstance().transferCredits(stationOwnerId, ship.ownerId, totalValue, true);
+                                    }
+                                    transferred = true;
                                 }
-
-                                console.log(`[物流] 船只 ${ship.name} 成功转移卸货 ${good} x${actualTransferred} 到空间站公库 ${targetStationUid}`);
-                                transferred = true;
-                            } else {
-                                console.log(`[物流] 船只 ${ship.name} 尝试转移 ${good} 失败 (可能目标 ${targetStationUid} 容量已满?)`);
+                            } else if (trade.type === 'buy') {
+                                // 从空间站买: 空间站 -> 飞船
+                                const actualTransferred = InventoryManager.transfer(targetStationUid, ship.id, trade.good, trade.amount);
+                                if (actualTransferred > 0) {
+                                    if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
+                                        let itemDef = ItemData.ITEMS ? ItemData.ITEMS[trade.good] : null;
+                                        let price = itemDef ? (itemDef.basePrice || 10) : 10;
+                                        let totalValue = price * actualTransferred;
+                                        NPCManager.getInstance().transferCredits(ship.ownerId, stationOwnerId, totalValue, true);
+                                    }
+                                    transferred = true;
+                                }
+                            }
+                        });
+                    } else {
+                        // 【兜底模式】：没有清单，默认把身上所有的货全卖了
+                        /* [暂时注释掉兜底功能以配合测试]
+                        const myInv = InventoryManager.getInventory(ship.id);
+                        for (const good in myInv) {
+                            if (myInv[good] > 0) {
+                                const amountToTransfer = myInv[good];
+                                const actualTransferred = InventoryManager.transfer(ship.id, targetStationUid, good, amountToTransfer);
+                                
+                                if (actualTransferred > 0) {
+                                    if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
+                                        let itemDef = ItemData.ITEMS ? ItemData.ITEMS[good] : null;
+                                        let price = itemDef ? (itemDef.basePrice || 10) : 10;
+                                        let totalValue = price * actualTransferred;
+                                        
+                                        NPCManager.getInstance().transferCredits(stationOwnerId, ship.ownerId, totalValue, true);
+                                    }
+                                    transferred = true;
+                                }
                             }
                         }
-                    }
-                    
-                    if (!transferred) {
-                        console.log(`[物流] 船只 ${ship.name} 卸货判定结束，没有发生任何转移。`);
+                        */
                     }
                     
                     ship.taskStack.shift();

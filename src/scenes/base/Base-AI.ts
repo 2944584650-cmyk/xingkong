@@ -616,9 +616,13 @@ export function processAILogic(ent, allShipsList, dt, context) {
         const dist = Math.hypot(dx, dy);
         
         if (dist < 60) {
-            // 到达目标逻辑：交由外部调用 tryEnterStargate 处理，此处不再调用 context 的函数，而是设置标志
+            // --- 到达判定 ---
+            
+            // 1. 如果正在进行宏观的星区穿越 (ARRIVAL)，到达星系中心判定为完成旅程
             if (ent.shipRef && ent.shipRef.state === 'ARRIVAL') {
-                ent.shipRef.forceCompleteTravel(worldState);
+                ent.shipRef.state = 'IDLE';
+                ent.shipRef.travelProgress = 0;
+                
                 if (!ent.isWingman) {
                     if (ent.type === 'freighter') {
                         let hostId = 'station';
@@ -629,7 +633,26 @@ export function processAILogic(ent, allShipsList, dt, context) {
                         return { action: 'dock', hostId: hostId };
                     }
                 }
-            } else {
+            } 
+            // 2. 如果正在执行建筑停靠指令
+            else if (isCommandDocking) {
+                // 如果距离极近，执行强制入库逻辑
+                if (dist < 10) {
+                    const hostId = ent.dockingGuidanceTarget?.targetId;
+                    const berthId = ent.dockingGuidanceTarget?.berthId;
+                    if (hostId) {
+                        ShipManager.dockShip(ent.id, hostId, berthId);
+                        // 清除任务栈里的 DOCK_AT_STATION，让飞船继续执行下一步
+                        if (ent.shipRef && ent.shipRef.taskStack && ent.shipRef.taskStack.length > 0 && ent.shipRef.taskStack[0].action === 'DOCK_AT_STATION') {
+                            ent.shipRef.taskStack.shift();
+                        }
+                        ent.isDocked = true;
+                        return { action: 'dock', hostId: hostId };
+                    }
+                }
+            }
+            // 3. 默认是尝试穿越星门
+            else {
                 return { action: 'tryEnterStargate' };
             }
         }

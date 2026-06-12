@@ -100,7 +100,8 @@ export function updateBuildingOOS(worldState: any, dt: number) {
                         loadout: myChild.loadout || {},
                         droneEquips: myChild.droneEquips || {},
                         factionId: tFaction,
-                        ownerId: tOwner,
+                        ownerId: tOwner, // 保留原有的所有权记录
+                        pilotId: myChild.pilotId, // 保留原有的驾驶员记录
                         type: myChild.type,
                         location: { sector: myChild.location.sector, x: spawnX, y: spawnY },
                         rotation: myChild.rotation || 0

@@ -3,7 +3,7 @@ import { EventBus, GameEvents } from '../utils/EventBus.js';
 import { OOSSimulator } from './OOSSimulator.js';
 import { ShipDecision, ShipExecution } from './ship/ShipDecision.js';
 import { BuildingManager, GRID_PIXEL_SIZE } from './BuildingManager.js';
-import { triggerWarp } from './oos/OOS-Travel.js';
+import { triggerWarp, updateTravel } from './oos/OOS-Travel.js';
 import { ShipData } from '../data/ShipData.js';
 import { NPCManager } from './NPCManager.js';
 
@@ -34,6 +34,7 @@ export class Ship implements ShipData {
         // 强制转换为整型，防止序列化后变成字符串导致预设匹配失败
         this.factionId = parseInt(data.factionId) || 0; 
         this.ownerId = data.ownerId !== undefined ? data.ownerId : this.factionId;
+        this.pilotId = data.pilotId; // 记录驾驶员
         
         // [新增] 记录母体标识，用于无人机和舰载机存活判定及所属权挂靠
         this.parentId = data.parentId || null;
@@ -277,7 +278,7 @@ export class Ship implements ShipData {
 
         // --- 核心修复：状态机异常自愈 ---
         if (this.state === 'DEPARTURE' && (!this.path || this.path.length === 0 || !this.targetGate)) {
-            console.warn(`[ShipManager] 飞船 ${this.name} 状态异常 (DEPARTURE 但无目标)，启动自愈 -> IDLE`);
+            console.warn(`[ShipManager] 飞船 ${this.name} 状态异常 (DEPARTURE 但无目标)，启动自愈 -> IDLE。当前飞船数据:`, this);
             this.state = 'IDLE';
             this.path = [];
             this.targetGate = null;
@@ -285,7 +286,7 @@ export class Ship implements ShipData {
         }
         
         if (this.state === 'WARP' && !this.currentLane) {
-            console.warn(`[ShipManager] 飞船 ${this.name} 状态异常 (WARP 但无航线)，启动自愈 -> IDLE`);
+            console.warn(`[ShipManager] 飞船 ${this.name} 状态异常 (WARP 但无航线 currentLane 为空)，启动自愈 -> IDLE。这通常是因为进入 WARP 状态时缺少正确的数据赋值。当前飞船数据:`, this);
             this.state = 'IDLE';
             this.path = [];
             this.travelProgress = 0;
@@ -492,27 +493,17 @@ export class Ship implements ShipData {
             return; 
         }
 
-        // --- OOS 引擎接管纯后台推演 ---
-        if (!isActiveSim) {
-            // 如果玩家不在这个星系，把这艘船扔给 OOSSimulator 去算移动和打架
-            OOSSimulator.updateShipOOS(this, dt, worldState, allShips);
-        } else {
-            // 如果玩家在这个星系（活跃模拟），只处理战斗脱战状态，移动和打架交给 Base.ts 微观实体
-            if (this.state === 'COMBAT' && this.combatTimer <= 0) {
-                this.state = 'IDLE';
-            }
-            // --- 活跃星系中如果飞船正在跨星区跃迁(出发/到达阶段)，依然借用 OOS 引擎更新一点进度 ---
-            if (['DEPARTURE', 'WARP', 'TRANSIT', 'ARRIVAL'].includes(this.state)) {
-                 // 仅仅借助 OOS 的逻辑跑一下 warp 进度条
-                 // 但注意，活跃星系的 departure 可能会被 Phaser 的碰撞体积接管，所以这里调用要慎重
-                 // 鉴于旧版逻辑，如果在活跃星区，跃迁状态由 forceCompleteTravel 碰撞触发
-                 
-                 // 如果是纯 WARP 状态，必须借用 OOS 推进进度条，否则玩家飞船永远卡在 WARP 里无法出界
-                 if (this.state === 'WARP') {
-                     import('./oos/OOS-Travel.js').then(module => {
-                         module.updateTravel(this, dt, worldState);
-                     });
-                 }
+        // 如果玩家在这个星系（活跃模拟），只处理战斗脱战状态，移动和打架交给 Base.ts 微观实体
+        if (this.state === 'COMBAT' && this.combatTimer <= 0) {
+            this.state = 'IDLE';
+        }
+        
+        // --- 无论 IS 还是 OOS，跃迁进度都由 OOS-Travel 统筹推进 ---
+        if (['DEPARTURE', 'WARP', 'TRANSIT', 'ARRIVAL'].includes(this.state)) {
+            // 如果处于活跃星区，DEPARTURE 等状态通常是由物理碰撞星门来完成状态切换的 (在 Base.ts 的 tryEnterStargate 里调用 forceCompleteTravel/triggerWarp)
+            // 但是如果它纯粹是 WARP 状态，或者出于 OOS，则完全交由 updateTravel 推演
+            if (!isActiveSim || this.state === 'WARP') {
+                updateTravel(this, dt, worldState);
             }
         }
 
@@ -538,17 +529,6 @@ export class Ship implements ShipData {
     }
 
     // 已将 OOS 位移与跃迁推演算法全部剪切至 OOSSimulator.ts 统一维护
-
-    // 暴露一个公共方法给 Base.js，当物理碰撞到星门或到达停泊点时调用
-    forceCompleteTravel(worldState) {
-        console.log(`[跃迁调试] 强制完成旅程状态流转：飞船 ${this.id}, 当前状态: ${this.state}`);
-        if (this.state === 'DEPARTURE' || this.state === 'TRANSIT') {
-            triggerWarp(this, worldState);
-        } else if (this.state === 'ARRIVAL') {
-            this.state = 'IDLE';
-            this.travelProgress = 0;
-        }
-    }
 }
 
 export class ShipManager {
@@ -690,10 +670,16 @@ export class ShipManager {
     }
 
     static createShip(template) {
-        // [NPC注入] 如果没有明确指定 ownerId，并且不是玩家的船，且有 factionId
-        if (template.ownerId === undefined && template.factionId !== undefined && template.factionId !== 0 && template.factionId !== '0') {
+        // [NPC注入] 如果没有明确指定 ownerId，或者 ownerId 只是单纯的阵营ID字符串，并且不是玩家的船
+        // 则为它单独生成一名有血有肉的 NPC 舰长兼所有者
+        const isFactionIdAsOwner = template.ownerId !== undefined && !isNaN(Number(template.ownerId));
+        if ((template.ownerId === undefined || isFactionIdAsOwner) && template.factionId !== undefined && template.ownerId !== 'player' && template.type !== 'drone') {
             const npcId = NPCManager.getInstance().assignOrGetNPCForEntity(template.factionId);
             template.ownerId = npcId;
+            // 下水分配驾驶员：这名个体既是老板，又是驾驶员
+            if (!template.pilotId) {
+                template.pilotId = npcId; 
+            }
         }
 
         const ship = new Ship(template);
@@ -701,6 +687,11 @@ export class ShipManager {
         // 注册到 NPC 资产中
         if (ship.ownerId && ship.ownerId !== 'player' && isNaN(Number(ship.ownerId))) {
             NPCManager.getInstance().addOwnedShip(ship.ownerId, ship.id);
+        }
+
+        // --- 物理定位驾驶员 ---
+        if (ship.pilotId && ship.pilotId !== 'player' && isNaN(Number(ship.pilotId))) {
+            NPCManager.getInstance().updateLocation(ship.pilotId, ship.id);
         }
 
         this.ships.push(ship);
@@ -786,10 +777,19 @@ export class ShipManager {
         
         // 彻底清理被打死（HP<=0）的飞船，防止在前端无限复活
         const beforeCount = this.ships.length;
+        const deadShips = this.ships.filter(ship => ship.stats.hp <= 0);
         this.ships = this.ships.filter(ship => ship.stats.hp > 0);
         
         // 如果有飞船被清理，自动保存一次状态
         if (this.ships.length !== beforeCount) {
+            // --- 处理驾驶员阵亡 ---
+            deadShips.forEach(deadShip => {
+                if (deadShip.pilotId && deadShip.pilotId !== 'player' && isNaN(Number(deadShip.pilotId))) {
+                    NPCManager.getInstance().killNPC(deadShip.pilotId);
+                    console.log(`[ShipManager] 飞船 ${deadShip.id} 坠毁，驾驶员 ${deadShip.pilotId} 阵亡。`);
+                }
+            });
+
             // 同步清理 AI 舰队中死亡的成员
             let fleetsChanged = false;
             this.fleets.forEach(fleet => {

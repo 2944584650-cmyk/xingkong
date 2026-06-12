@@ -1,5 +1,3 @@
-import { moveToTargetPos } from './OOS-Movement.js';
-
 /**
  * 获取通往目标星系的星门坐标（用于 OOS 出发/到达定位）
  */
@@ -23,36 +21,34 @@ export function getGatePos(sectorName: string, targetSectorName: string, worldSt
 /**
  * 触发跃迁逻辑
  */
-export function triggerWarp(ship: any, worldState: any) {
-    if (!ship.targetGate) return;
+export function triggerWarp(ship: any, nextGateName: string, worldState: any) {
+    if (!nextGateName) return;
     const startNode = worldState.sectors.find((s: any) => s.name === ship.location.sector);
-    const endNode = worldState.sectors.find((s: any) => s.name === ship.targetGate);
+    const endNode = worldState.sectors.find((s: any) => s.name === nextGateName);
     if (!startNode || !endNode) return;
     
     const dist = Math.hypot(endNode.x - startNode.x, endNode.y - startNode.y);
+    const finalDist = Math.max(10, dist); // 防止原地TP导致距离为0
+    
     ship.currentLane = {
         from: startNode.name,
         to: endNode.name,
-        dist: dist
+        dist: finalDist
     };
     ship.state = 'WARP';
     ship.travelProgress = 0;
+    
+    // --- 添加调试信息：飞船触发跃迁 ---
+    console.log(`[星门穿越] 飞船 [${ship.name}] (ID: ${ship.id}) 进入星门网络，开始从 [${startNode.name}] 跃迁至 [${endNode.name}]，航道距离：${finalDist.toFixed(0)}`);
 }
 
 /**
  * OOS 跨星系移动状态机
- * 处理 DEPARTURE(前往星门) -> WARP(超空间飞行) -> TRANSIT/ARRIVAL(到达星门) 的全过程
+ * 处理 WARP(超空间飞行) 的进度推演
+ * 注意：前往星门的过程(DEPARTURE/TRANSIT)已交由 Base.ts 全权物理推演，此处不再越俎代庖
  */
 export function updateTravel(ship: any, dt: number, worldState: any) {
-    if (ship.state === 'DEPARTURE') {
-        if (ship.targetGate) {
-            const targetPos = getGatePos(ship.location.sector, ship.targetGate, worldState);
-            moveToTargetPos(ship, targetPos, dt, () => {
-                triggerWarp(ship, worldState);
-            });
-        }
-    } 
-    else if (ship.state === 'WARP') {
+    if (ship.state === 'WARP') {
         if (!ship.currentLane) {
             ship.state = 'IDLE';
             return;
@@ -68,10 +64,18 @@ export function updateTravel(ship: any, dt: number, worldState: any) {
         
         if (ship.travelProgress >= 1) {
             // 跃迁完成
-            ship.location.sector = ship.currentLane.to;
-            // [重构修复] 绝对不能把宏观坐标写死成 0,0。必须置空，让微观物理引擎分配星门吐出坐标
-            ship.location.x = undefined; 
-            ship.location.y = undefined;
+            const cameFrom = ship.currentLane.from;
+            const newSector = ship.currentLane.to;
+            
+            // 获取新星系里通往上一个星系的星门坐标
+            const arrivalGatePos = getGatePos(newSector, cameFrom, worldState);
+            
+            ship.location.sector = newSector;
+            // 抽象分配，直接把飞船丢到星门上（无物理移动过程）
+            ship.location.x = arrivalGatePos.x; 
+            ship.location.y = arrivalGatePos.y;
+            ship.vx = 0;
+            ship.vy = 0;
             
             // 如果是玩家资产，落地存档
             if (ship.ownerId === 'player') {
@@ -90,7 +94,6 @@ export function updateTravel(ship: any, dt: number, worldState: any) {
                 }
             }
             
-            const cameFrom = ship.currentLane.from;
             ship.currentLane = null;
             if (ship.path && ship.path.length > 0) {
                 ship.path.shift(); 
@@ -116,15 +119,6 @@ export function updateTravel(ship: any, dt: number, worldState: any) {
             }
         }
     }
-    else if (ship.state === 'TRANSIT') {
-        if (ship.transitToGate) {
-            const targetPos = getGatePos(ship.location.sector, ship.transitToGate, worldState);
-            moveToTargetPos(ship, targetPos, dt, () => {
-                ship.targetGate = ship.transitToGate;
-                triggerWarp(ship, worldState);
-            });
-        }
-    }
     else if (ship.state === 'ARRIVAL') {
         // [铁律] OOS 引擎绝对不允许接管玩家旗舰的降落坐标计算！必须留给微观雷达处理
         if (ship.ownerId === 'player' && ship.id === localStorage.getItem('player_ship_id')) {
@@ -132,10 +126,8 @@ export function updateTravel(ship: any, dt: number, worldState: any) {
             return;
         }
 
-        const targetPos = { x: 500, y: 275 }; // NPC降落点默认回星区中心
-        moveToTargetPos(ship, targetPos, dt, () => {
-            ship.state = 'IDLE';
-            ship.travelProgress = 0;
-        });
+        // 不再进行物理坐标位移，直接恢复为 IDLE
+        ship.state = 'IDLE';
+        ship.travelProgress = 0;
     }
 }

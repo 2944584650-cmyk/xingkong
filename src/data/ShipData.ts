@@ -8,7 +8,8 @@ export interface ShipData {
     name: string;
     
     // --- 身份与所有权 ---
-    ownerId: string;             // 'player' 或 NPC id
+    ownerId: string;             // 'player' 或 NPC id (资产拥有者)
+    pilotId?: string;            // 'player' 或 NPC id (当前实际驾驶员，为空则视为AI/无人驾驶)
     factionId: number;           // 阵营 ID
     type: 'fighter' | 'freighter' | 'drone' | 'station' | string;
     size: 'small' | 'medium' | 'large' | 'capital' | string;

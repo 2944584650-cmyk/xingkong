@@ -1,4 +1,3 @@
-import { updateCombatAndMove } from './oos/OOS-Movement.js';
 import { updateTravel } from './oos/OOS-Travel.js';
 import { updateBuildingOOS } from './oos/OOS-Building.js';
 
@@ -7,12 +6,13 @@ import { updateBuildingOOS } from './oos/OOS-Building.js';
  * 
  * 专门负责处理玩家视野外（活跃星区外）所有飞船和设施的“抽象后台推演”。
  * 职责包括：
- * 1. 后台飞船的坐标更新（无物理碰撞的纯数学运动）
- * 2. 后台跨星系跃迁进度的推进
- * 3. 后台舰队之间的纯数值对战结算
- * 4. 后台建筑队列和虚影下水的推进
+ * 1. 后台跨星系跃迁进度的推进
+ * 2. 后台建筑队列和虚影下水的推进
  */
 export class OOSSimulator {
+    private static lastLogTime = 0;
+    private static debugShips: any = {};
+
     /**
      * 全局后台宏观状态更新入口
      * 可供管理世界状态的地方定时调用
@@ -21,22 +21,7 @@ export class OOSSimulator {
         updateBuildingOOS(worldState, dt);
     }
 
-    /**
-     * 主更新入口：处理一艘在后台的飞船
-     * 由 ShipManager 的 update() 循环调用
-     */
-    static updateShipOOS(ship: any, dt: number, worldState: any, allShips: any[]) {
-        // 如果正在停泊，不进行任何位移或战斗推演
-        if (ship.state === 'DOCKED') return;
-
-        // 如果是闲置状态，执行巡航与找打架逻辑
-        if (ship.state === 'IDLE') {
-            updateCombatAndMove(ship, dt, allShips);
-        }
-        
-        // 赶路/跃迁等状态通过 travel 统筹
-        if (['DEPARTURE', 'WARP', 'TRANSIT', 'ARRIVAL'].includes(ship.state)) {
-            updateTravel(ship, dt, worldState);
-        }
-    }
+    // OOSSimulator 中针对单一飞船的冗余推演代码已经被删除
+    // 目前所有的物理演算 (包括 OOS 状态下的 DPS 战斗和血量判定) 都已经统一整合到了 Base.ts 中。
+    // 而关于星图赶路跃迁进度的推进，也已经被统筹交由 OOS-Travel.ts 的 updateTravel 函数接管。
 }

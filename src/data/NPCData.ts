@@ -11,7 +11,8 @@ export interface NPCData {
     ownedBuildings: string[]; // 拥有的建筑/空间站 ID 列表
     
     // --- 其他可选属性 ---
-    location?: string;        // 当前所在的星区/空间站 ID
+    location?: string;        // 当前所在的物理位置 (通常是其驾驶的飞船ID或停靠的空间站ID)
     inventory?: Record<string, number>; // NPC个人的随身物品/私密仓库 (物品ID -> 数量)
     traits?: string[];        // 性格/特质
+    isDead?: boolean;         // 标记该NPC是否已经物理死亡
 }

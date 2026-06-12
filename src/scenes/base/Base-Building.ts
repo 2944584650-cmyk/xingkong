@@ -39,7 +39,8 @@ export function finishShipBuilding(targetEntityId: string, oldRef: any, spawnX: 
         loadout: oldRef.loadout || {}, // 宏观属性名为 loadout
         droneEquips: oldRef.droneEquips || {}, // 继承造船厂订单中携带的无人机配置
         factionId: tFaction,
-        ownerId: tOwner,
+        ownerId: tOwner, // 保留原有的所有权记录（可能是 'player', 也可能是具体的 npcId 或 阵营ID）
+        pilotId: oldRef.pilotId, // 保留原有的驾驶员记录
         type: oldRef.type,
         location: { sector: oldRef.location?.sector || localStorage.getItem('current_sector'), x: spawnX, y: spawnY },
         rotation: spawnRot
@@ -104,6 +105,9 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
     const allBuildingShips = ShipManager.ships.filter(s => s.location && s.location.sector === currentSectorName && (s.isBuilding || (s.stats && s.stats.hp > 0 && s.buildProgress !== undefined && s.buildProgress < 100)));
     
     ws.stations.forEach(station => {
+        // [防御修复]：确保此处的队列派发只负责当前指定的星区，否则可能与 OOS 后台冲突，或者在一个星区内重复造多艘船
+        if (station.sector !== currentSectorName) return;
+
         if (!station.modules) return;
         
         // (工厂流水线结算已被移至 WorldbookManager.tickWorld 的全局经济循环中)

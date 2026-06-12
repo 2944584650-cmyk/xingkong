@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ItemData from '../../json/ItemData.json';
 import EquipmentData from '../../json/EquipmentData.json';
 import ModuleDataConfig from '../../json/ModuleData.json';
 import { InventoryManager } from '../managers/InventoryManager';
+import { NPCManager } from '../managers/NPCManager';
 
 interface ObserveUIProps {
     shipData: any;
@@ -10,9 +11,18 @@ interface ObserveUIProps {
 }
 
 export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
-    const [pos, setPos] = useState({ x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 - 200 });
+    const [pos, setPos] = useState({ x: window.innerWidth / 2 - 450, y: window.innerHeight / 2 - 350 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [, setRefreshTrigger] = useState(0);
+
+    // Auto-refresh timer for 0.5s intervals
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setRefreshTrigger(prev => prev + 1);
+        }, 500);
+        return () => clearInterval(timer);
+    }, []);
 
     const handleDragStart = (e: React.PointerEvent) => {
         setIsDragging(true);
@@ -53,6 +63,41 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
 
     const hullDef = hullId ? (EquipmentData.HULLS as Record<string, any>)[hullId] : null;
 
+    // 所属实体/NPC查询
+    const ownerId = shipData?.ownerId || shipData?.shipRef?.ownerId;
+    let ownerName = "野生/无主";
+    let ownerCredits: number | null = null;
+    let ownerFaction: string | number = "独立";
+    
+    if (ownerId === 'player') {
+        ownerName = "玩家 (Player)";
+    } else if (ownerId !== undefined) {
+        const npc = NPCManager.getInstance().getNPC(ownerId);
+        if (npc) {
+            ownerName = npc.name;
+            ownerCredits = Math.floor(npc.credits);
+            ownerFaction = npc.factionId;
+        } else {
+            ownerName = `派系公有 [${ownerId}]`;
+            ownerFaction = ownerId;
+        }
+    }
+
+    // 驾驶员/AI查询
+    const pilotId = shipData?.pilotId || shipData?.shipRef?.pilotId;
+    let pilotName = "AI 自动控制";
+    
+    if (pilotId === 'player') {
+        pilotName = "玩家 (Player)";
+    } else if (pilotId !== undefined) {
+        const pilotNpc = NPCManager.getInstance().getNPC(pilotId);
+        if (pilotNpc) {
+            pilotName = pilotNpc.name;
+        } else {
+            pilotName = `未知驾驶员 [${pilotId}]`;
+        }
+    }
+
     // 货舱处理
     const inventoryList = Object.entries(inventory).map(([key, count]) => {
         let def = (ItemData.ITEMS as any)[key];
@@ -75,8 +120,8 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
                 position: 'absolute',
                 top: `${pos.y}px`,
                 left: `${pos.x}px`,
-                width: '600px',
-                height: '400px',
+                width: '900px',
+                height: '700px',
                 backgroundColor: 'rgba(10, 20, 30, 0.95)',
                 border: '2px solid #ff00ff',
                 borderRadius: '8px',
@@ -365,6 +410,61 @@ export const ObserveUI: React.FC<ObserveUIProps> = ({ shipData, onClose }) => {
                             </div>
                         </div>
                     )}
+                </div>
+
+                {/* 驾驶与资产信息 (Pilot 板块) */}
+                <div style={{ width: '280px', borderLeft: '1px solid rgba(255,0,255,0.2)', padding: '15px', backgroundColor: 'rgba(0, 255, 255, 0.02)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                    <h4 style={{ color: '#00ffff', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '8px', marginTop: 0, display: 'flex', alignItems: 'center' }}>
+                        👤 驾驶与乘员
+                    </h4>
+                    
+                    {/* 头像预留位 */}
+                    <div style={{ 
+                        width: '120px', 
+                        height: '120px', 
+                        backgroundColor: 'rgba(0,0,0,0.6)', 
+                        border: '2px solid rgba(0,255,255,0.4)',
+                        borderRadius: '8px',
+                        margin: '10px auto 20px auto',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        color: '#666',
+                        fontSize: '14px'
+                    }}>
+                        [驾驶员影像]
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,255,255,0.2)', paddingBottom: '8px' }}>
+                            <span style={{ color: '#aaa', fontSize: '13px' }}>驾驶员: </span>
+                            <span style={{ color: pilotId === 'player' ? '#00ffaa' : '#00ffff', fontWeight: 'bold', fontSize: '14px' }}>{pilotName}</span>
+                        </div>
+                        
+                        {/* 归属作为次要信息显示 */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
+                            <span style={{ color: '#888', fontSize: '12px' }}>资产归属: </span>
+                            <span style={{ color: ownerId === 'player' ? '#00cc88' : '#cccc00', fontSize: '12px' }}>{ownerName}</span>
+                        </div>
+
+                        {ownerId !== 'player' && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
+                                <span style={{ color: '#888', fontSize: '12px' }}>所属阵营: </span>
+                                <span style={{ color: '#ffaa00', fontSize: '12px' }}>{ownerFaction}</span>
+                            </div>
+                        )}
+
+                        {ownerCredits !== null && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
+                                <span style={{ color: '#888', fontSize: '12px' }}>归属方资金: </span>
+                                <span style={{ color: '#00cc00', fontSize: '12px' }}>{ownerCredits.toLocaleString()} 币</span>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div style={{ flex: 1, marginTop: '20px', border: '1px dashed rgba(0,255,255,0.2)', borderRadius: '6px', padding: '20px 10px', color: '#666', fontSize: '13px', display: 'flex', justifyContent: 'center', alignItems: 'center', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                        此区域预留扩展<br/><br/>(例如：<br/>驾驶员技能<br/>忠诚度/士气<br/>发布个人命令)
+                    </div>
                 </div>
             </div>
         </div>

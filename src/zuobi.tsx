@@ -5,11 +5,13 @@ import { PlayerManager } from './managers/PlayerManager';
 import { EventBus, GameEvents } from './utils/EventBus';
 import { BuildingManager } from './managers/BuildingManager';
 import { InventoryManager } from './managers/InventoryManager';
+import { NPCManager } from './managers/NPCManager';
 
 export const ZuobiPanel: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'base' | 'fleet' | 'items' | 'building' | 'orders'>('base');
+    const [activeTab, setActiveTab] = useState<'base' | 'fleet' | 'items' | 'building' | 'orders' | 'npcs'>('base');
     const [ordersList, setOrdersList] = useState<any[]>([]);
+    const [npcList, setNpcList] = useState<any[]>([]);
     const [orderFilter, setOrderFilter] = useState<'ALL' | 'BUILD' | 'COMBAT' | 'PATROL'>('ALL');
 
     const refreshOrders = () => {
@@ -19,9 +21,16 @@ export const ZuobiPanel: React.FC = () => {
         });
     };
 
+    const refreshNPCs = () => {
+        const npcs = NPCManager.getInstance().getAllNPCs();
+        setNpcList(npcs || []);
+    };
+
     useEffect(() => {
         if (activeTab === 'orders') {
             refreshOrders();
+        } else if (activeTab === 'npcs') {
+            refreshNPCs();
         }
     }, [activeTab]);
     
@@ -147,7 +156,7 @@ export const ZuobiPanel: React.FC = () => {
                 name: `作弊生成_${presetKey}`,
                 hullId: preset.hullId,
                 factionId: selectedFaction === 'player' ? 0 : parseInt(selectedFaction),
-                ownerId: selectedFaction === 'player' ? 'player' : parseInt(selectedFaction),
+                ownerId: selectedFaction === 'player' ? 'player' : undefined,
                 location: { sector: sectorToUse, x: spawnX, y: spawnY },
                 loadout: JSON.parse(JSON.stringify(preset.slots)),
                 state: 'IDLE',
@@ -211,7 +220,7 @@ export const ZuobiPanel: React.FC = () => {
             name: `测试木桩`,
             hullId: 'hull_freighter_s', // 使用商船底盘
             factionId: selectedFaction === 'player' ? 0 : parseInt(selectedFaction),
-            ownerId: selectedFaction === 'player' ? 'player' : parseInt(selectedFaction),
+            ownerId: selectedFaction === 'player' ? 'player' : undefined,
             location: { sector: currentSector, x: spawnX, y: spawnY },
             loadout: {}, // 无装备
             state: 'IDLE',
@@ -287,7 +296,7 @@ export const ZuobiPanel: React.FC = () => {
                     name: `AI_${presetKey}_${i}`,
                     hullId: preset.hullId,
                     factionId: parseInt(fleetFaction),
-                    ownerId: parseInt(fleetFaction),
+                    ownerId: undefined,
                     location: { sector: sector, x: startX + offsetX, y: startY + offsetY },
                     loadout: JSON.parse(JSON.stringify(preset.slots)),
                     state: 'IDLE'
@@ -489,6 +498,12 @@ export const ZuobiPanel: React.FC = () => {
                     style={{ flex: 1, padding: '8px', background: activeTab === 'orders' ? '#ff00ff' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
                 >
                     全宇宙订单
+                </button>
+                <button 
+                    onClick={() => setActiveTab('npcs')}
+                    style={{ flex: 1, padding: '8px', background: activeTab === 'npcs' ? '#ff00ff' : 'transparent', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                >
+                    NPC 池
                 </button>
             </div>
 
@@ -913,6 +928,44 @@ export const ZuobiPanel: React.FC = () => {
                         <p style={{ fontSize: '12px', color: '#888', marginTop: '10px', textAlign: 'center' }}>
                             订单数据由 WorldbookManager 的宏观结算（每 10 秒）自动生成。
                         </p>
+                    </div>
+                </>
+            )}
+
+            {activeTab === 'npcs' && (
+                <>
+                    <div style={{ background: 'rgba(255, 255, 0, 0.1)', padding: '10px', borderRadius: '4px', marginBottom: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <h4 style={{ margin: 0, color: '#ffff00' }}>NPC 实体池 ({npcList.length})</h4>
+                            <button 
+                                onClick={refreshNPCs}
+                                style={{ padding: '5px 10px', background: '#aaaa00', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                            >
+                                刷新列表
+                            </button>
+                        </div>
+                        
+                        <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '5px' }}>
+                            {npcList.length === 0 ? (
+                                <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>当前没有任何 NPC</div>
+                            ) : (
+                                npcList.map((npc: any) => (
+                                    <div key={npc.id} style={{ background: 'rgba(0, 0, 0, 0.5)', border: '1px solid #ffff00', padding: '8px', borderRadius: '4px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '14px' }}>{npc.name}</span>
+                                            <span style={{ color: '#ffaa00', fontSize: '12px' }}>阵营: {npc.factionId}</span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#aaa', margin: '4px 0', wordBreak: 'break-all' }}>ID: {npc.id}</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#ccc' }}>
+                                            <span>资金: <span style={{ color: '#0f0' }}>{Math.floor(npc.credits)} 币</span></span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#66ccff', marginTop: '4px' }}>
+                                            飞船资产: {npc.ownedShips?.length || 0} 艘 | 基地资产: {npc.ownedBuildings?.length || 0} 座
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
                 </>
             )}
