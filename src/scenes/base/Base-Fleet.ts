@@ -51,7 +51,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                 if (context && typeof context.showRTSFeedback === 'function') {
                     context.showRTSFeedback(null, detail.x || targetShip.location.x, detail.y || targetShip.location.y, '#00ffaa', '申请停靠');
                 }
-                console.log(`[战术调试] 指令已发送：要求舰队单位自动停靠至目标端口。`);
+                // console.log(`[战术调试] 指令已发送：要求舰队单位自动停靠至目标端口。`);
             }
         });
         return;
@@ -59,7 +59,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
     
     if (!selectedUnitIds || selectedUnitIds.length === 0) {
         if (type !== GameEvents.OPEN_TEXT_ADVENTURE) {
-            console.log(`[战术调试] 无法执行指令：请先左键点击或框选你的舰队单位！`);
+            // console.log(`[战术调试] 无法执行指令：请先左键点击或框选你的舰队单位！`);
         }
         return;
     }
@@ -77,7 +77,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
     }
     
     if (validUnitIds.length === 0) {
-        console.log(`[战术调试] 无法执行指令：选中的目标中没有可接受指令的单位！`);
+        // console.log(`[战术调试] 无法执行指令：选中的目标中没有可接受指令的单位！`);
         return;
     }
 
@@ -140,7 +140,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
             ShipManager.undockShip(unitId, { x: spawnX, y: spawnY, sector: spawnSector });
             
             if (index === 0) {
-                console.log(`[战术反馈] 舰船 ${targetShip.name || targetShip.id} 接收到指令，正在自动脱离泊区。`);
+                // console.log(`[战术反馈] 舰船 ${targetShip.name || targetShip.id} 接收到指令，正在自动脱离泊区。`);
                 EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { 
                     detail: `<div style="color:#00ffaa;">[系统] 接收到战术指令，舰船已自动脱离停泊端口。</div>` 
                 }));
@@ -153,7 +153,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                 targetShip.commandTargetId = detail.targetId;
                 if (index === 0) { // 只显示一次反馈特效
                     if (context.showRTSFeedback) context.showRTSFeedback(null, detail.x || targetShip.location.x, detail.y || targetShip.location.y, '#00aaff', '跟随目标');
-                    console.log(`[战术调试] 指令已发送：要求舰队跟随目标。目标ID为：${detail.targetId}`);
+                    // console.log(`[战术调试] 指令已发送：要求舰队跟随目标。目标ID为：${detail.targetId}`);
                 }
             } else if (detail.x !== undefined && detail.y !== undefined) {
                 // 简单的圆形编队偏移
@@ -187,13 +187,13 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                             
                             targetShip.commandState = 'MOVE_TO';
                             targetShip.moveTarget = { x: targetX, y: targetY };
-                            console.log(`[调试] 船只 ${targetShip.name} (${targetShip.id}) 得知了跨星系移动目标：${currentViewSector}`);
+                            // console.log(`[调试] 船只 ${targetShip.name} (${targetShip.id}) 得知了跨星系移动目标：${currentViewSector}`);
                         }
                     }
                     
                     if (index === 0) {
                         if (context.showRTSFeedback) context.showRTSFeedback(null, detail.x, detail.y, '#00ff00', '驻防于此');
-                        console.log(`[导航调试] 指令已发送：要求舰队跨星系前往 [${currentViewSector}]。`);
+                        // console.log(`[导航调试] 指令已发送：要求舰队跨星系前往 [${currentViewSector}]。`);
                     }
                 } else {
                     targetShip.commandState = 'MOVE_TO';
@@ -202,7 +202,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                         targetShip.orderQueue = [{ status: 'DEPLOYED', targetSector: currentViewSector }];
                     }
                     
-                    console.log(`[调试] 船只 ${targetShip.name} (${targetShip.id}) 得知了同星系移动目标坐标：X=${targetX.toFixed(2)}, Y=${targetY.toFixed(2)}`);
+                    // console.log(`[调试] 船只 ${targetShip.name} (${targetShip.id}) 得知了同星系移动目标坐标：X=${targetX.toFixed(2)}, Y=${targetY.toFixed(2)}`);
                     
                     const macroSector = context.sectorSimulations[currentViewSector];
                     if (macroSector) {
@@ -212,7 +212,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                     
                     if (index === 0) {
                         if (context.showRTSFeedback) context.showRTSFeedback(null, detail.x, detail.y, '#00ff00', '移动到此');
-                        console.log(`[战术调试] 指令已发送：要求舰队前往指定坐标。`);
+                        // console.log(`[战术调试] 指令已发送：要求舰队前往指定坐标。`);
                     }
                 }
             }
@@ -234,7 +234,7 @@ export function handleFleetCommand(selectedUnitIds, detail, type, context) {
                 }
                 if (index === 0) {
                     if (context.showRTSFeedback) context.showRTSFeedback(null, enemyX, enemyY, '#ff0000', '集火目标');
-                    console.log(`[战术调试] 指令已发送：要求舰队集火指定目标！`);
+                    // console.log(`[战术调试] 指令已发送：要求舰队集火指定目标！`);
                 }
             }
         }

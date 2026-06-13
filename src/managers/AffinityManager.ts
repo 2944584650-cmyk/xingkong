@@ -29,11 +29,11 @@ export class AffinityManager {
         if (delta < 0 && (state.relations[key] || 0) > -50 && rel <= -50) {
             const fac1 = state.factions.find((f: any) => f.id === f1);
             const fac2 = state.factions.find((f: any) => f.id === f2);
-            console.log(`[外交破裂] ${fac1?.name} 与 ${fac2?.name} 之间的好感度跌破冰点(${rel})，进入全面战争状态！`);
+            // console.log(`[外交破裂] ${fac1?.name} 与 ${fac2?.name} 之间的好感度跌破冰点(${rel})，进入全面战争状态！`);
         } else if (delta > 0 && (state.relations[key] || 0) <= -50 && rel > -50) {
             const fac1 = state.factions.find((f: any) => f.id === f1);
             const fac2 = state.factions.find((f: any) => f.id === f2);
-            console.log(`[外交缓和] ${fac1?.name} 与 ${fac2?.name} 签署了停火协议，好感度回暖(${rel})，恢复仅限缓冲区的克制摩擦。`);
+            // console.log(`[外交缓和] ${fac1?.name} 与 ${fac2?.name} 签署了停火协议，好感度回暖(${rel})，恢复仅限缓冲区的克制摩擦。`);
         }
         
         state.relations[key] = rel;

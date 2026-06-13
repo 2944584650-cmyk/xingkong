@@ -39,7 +39,7 @@ export function triggerWarp(ship: any, nextGateName: string, worldState: any) {
     ship.travelProgress = 0;
     
     // --- 添加调试信息：飞船触发跃迁 ---
-    console.log(`[星门穿越] 飞船 [${ship.name}] (ID: ${ship.id}) 进入星门网络，开始从 [${startNode.name}] 跃迁至 [${endNode.name}]，航道距离：${finalDist.toFixed(0)}`);
+    // console.log(`[星门穿越] 飞船 [${ship.name}] (ID: ${ship.id}) 进入星门网络，开始从 [${startNode.name}] 跃迁至 [${endNode.name}]，航道距离：${finalDist.toFixed(0)}`);
 }
 
 /**

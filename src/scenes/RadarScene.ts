@@ -44,7 +44,10 @@ export class RadarScene extends (window as any).Phaser.Scene {
         entryAngle: number;
         hullId: string;
         berthId: string;
+        sector?: string;
+        timestamp?: number;
         sprite?: any;
+        textObj?: any; // 新增：悬浮文字对象
     }>;
 
     constructor() {
@@ -135,6 +138,7 @@ export class RadarScene extends (window as any).Phaser.Scene {
         if (this.dockingGuidances) {
             for (let guide of this.dockingGuidances.values()) {
                 if (guide.sprite) guide.sprite.destroy();
+                if (guide.textObj) guide.textObj.destroy();
             }
             this.dockingGuidances.clear();
         }
@@ -286,10 +290,10 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         // 监听来自 UI 的引导请求
         document.addEventListener('ui_select_docking_target', (e: any) => {
-            const { worldX, worldY, entryAngle, hullId, berthId, shipId } = e.detail;
+            const { worldX, worldY, entryAngle, hullId, berthId, shipId, sector, timestamp } = e.detail;
             // hullId 可能没传过来，不要用它卡死
             if (worldX !== undefined && worldY !== undefined && entryAngle !== undefined && shipId) {
-                this.showDockingGuidance(worldX, worldY, entryAngle, hullId || 'hull_fighter_s', berthId, shipId);
+                this.showDockingGuidance(worldX, worldY, entryAngle, hullId || 'hull_fighter_s', berthId, shipId, sector, timestamp);
             }
         });
 
@@ -299,18 +303,20 @@ export class RadarScene extends (window as any).Phaser.Scene {
             if (shipId && this.dockingGuidances.has(shipId)) {
                 const guide = this.dockingGuidances.get(shipId);
                 if (guide && guide.sprite) guide.sprite.destroy();
+                if (guide && guide.textObj) guide.textObj.destroy();
                 this.dockingGuidances.delete(shipId);
             }
         });
     }
 
-    showDockingGuidance(x: number, y: number, angle: number, hullId: string, berthId: string, shipId: string) {
+    showDockingGuidance(x: number, y: number, angle: number, hullId: string, berthId: string, shipId: string, sector?: string, timestamp?: number) {
         if (!shipId) return;
 
         // 清除同一个 shipId 的旧引导
         if (this.dockingGuidances.has(shipId)) {
             const oldGuide = this.dockingGuidances.get(shipId);
             if (oldGuide && oldGuide.sprite) oldGuide.sprite.destroy();
+            if (oldGuide && oldGuide.textObj) oldGuide.textObj.destroy();
         }
 
         const hullDef = (GameConfig as any).HULLS[hullId];
@@ -339,13 +345,35 @@ export class RadarScene extends (window as any).Phaser.Scene {
         sprite.setTint(0x00ff00); // 绿色调
         sprite.setDepth(8); // 将停泊虚影放在较顶层的 depth，与引导线齐平
 
+        // 默认显示文字
+        const textStr = `[停泊] 泊位: ${berthId}`;
+        const textObj = this.add.text(x, y - 20, textStr, { 
+            fontSize: '12px', 
+            fill: '#00ff00',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        textObj.setDepth(9);
+
+        // 如果引导信息与当前星区不符，立刻隐藏（不销毁，等切过去还能看到）
+        const baseScene = this.scene.manager.getScene('Base') as any;
+        const currentViewSector = (baseScene && baseScene.viewingSector) ? baseScene.viewingSector : localStorage.getItem('current_sector');
+        
+        if (sector && currentViewSector && sector !== currentViewSector) {
+            sprite.setVisible(false);
+            textObj.setVisible(false);
+        }
+
         this.dockingGuidances.set(shipId, {
             worldX: x,
             worldY: y,
             entryAngle: angle,
             hullId: hullId,
             berthId: berthId,
-            sprite: sprite
+            sector: sector,
+            timestamp: timestamp || Date.now(),
+            sprite: sprite,
+            textObj: textObj
         });
     }
 
@@ -688,7 +716,62 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         // 绘制停泊引导线
         if (this.dockingGuidances && this.dockingGuidances.size > 0) {
+            const now = Date.now();
+            const baseScene = this.scene.manager.getScene('Base') as any;
+            const currentViewSector = (baseScene && baseScene.viewingSector) ? baseScene.viewingSector : localStorage.getItem('current_sector');
+
             for (const [targetId, guidance] of this.dockingGuidances.entries()) {
+                
+                // 1. 星区过滤：如果不是当前星区的指令，或者当前星区变了，不渲染引导线
+                if (guidance.sector && guidance.sector !== currentViewSector) {
+                    if (guidance.sprite && guidance.sprite.visible) guidance.sprite.setVisible(false);
+                    if (guidance.textObj && guidance.textObj.visible) guidance.textObj.setVisible(false);
+                    continue; // 跳过不画线
+                } else {
+                    // 在当前星区，确保可见并随缩放更新
+                    if (guidance.sprite && !guidance.sprite.visible) guidance.sprite.setVisible(true);
+                    if (guidance.textObj) {
+                        if (!guidance.textObj.visible) guidance.textObj.setVisible(true);
+                        guidance.textObj.setScale(invZoom);
+                        // 根据时间计算进度并更新文字
+                        if (guidance.timestamp) {
+                            const elapsed = now - guidance.timestamp;
+                            const timeout = 120000; // 2 分钟超时
+                            
+                            // 检查超时逻辑
+                            if (elapsed > timeout) {
+                                console.warn(`[港务局] 飞船 ${targetId} 停泊申请超时 (超过 2 分钟)，强制释放泊位。`);
+                                // 通过事件通知系统清空占位
+                                document.dispatchEvent(new CustomEvent('ui_docking_timeout', {
+                                    detail: { shipId: targetId }
+                                }));
+                                
+                                // 自我销毁
+                                if (guidance.sprite) guidance.sprite.destroy();
+                                if (guidance.textObj) guidance.textObj.destroy();
+                                this.dockingGuidances.delete(targetId);
+                                continue; // 跳出本次循环
+                            }
+                            
+                            const ratio = Math.max(0, 1 - elapsed / timeout);
+                            const remainingSecs = Math.ceil((timeout - elapsed) / 1000);
+                            
+                            // 修改文字显示时间
+                            let textStr = `[引导中] 泊位: ${guidance.berthId} - ${remainingSecs}s`;
+                            
+                            // 文字颜色警示
+                            if (remainingSecs < 30) {
+                                guidance.textObj.setColor('#ff3333');
+                            } else {
+                                guidance.textObj.setColor('#00ff00');
+                            }
+                            
+                            guidance.textObj.setText(textStr);
+                            guidance.textObj.y = guidance.worldY - (25 * invZoom);
+                        }
+                    }
+                }
+
                 let playerSprite = this.shipSprites.get(targetId);
                 
                 // 兜底找玩家飞船 (兼容)
@@ -757,18 +840,23 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         // 绘制采矿特效
         // 由于 entities 的完整列表在 syncEntities 时被抛弃了，我们需要通过 shipSprites 遍历来获取附带的属性
-        this.effectGraphics.lineStyle(2 * invZoom, 0x00ff00, 0.5);
         for (const sprite of this.shipSprites.values()) {
             if (sprite.entRef && sprite.entRef.shipRef && sprite.entRef.shipRef.isActivelyMining) {
                 // 绘制收缩波纹
                 const cycle = (time % 1000) / 1000; // 0 到 1
                 const radius = (60 - cycle * 50) * invZoom; // 半径从 60 缩到 10
                 
-                // 绘制一圈绿色的吸附特效
+                // 判定是否超载，超载变红，正常为绿黄
+                const isOverloaded = sprite.entRef.shipRef.isMiningOverloaded;
+                const baseColor = isOverloaded ? 0xff0000 : 0x00ff00;
+                const innerColor = isOverloaded ? 0xffaaaa : 0xffff00;
+
+                this.effectGraphics.lineStyle(2 * invZoom, baseColor, 0.5);
+                // 绘制一圈主颜色的吸附特效
                 this.effectGraphics.strokeCircle(sprite.entRef.x, sprite.entRef.y, radius);
                 
-                // 如果是黄色采矿激光，还可以混点黄色
-                this.effectGraphics.lineStyle(1 * invZoom, 0xffff00, Math.max(0, 1 - cycle));
+                // 内圈混色
+                this.effectGraphics.lineStyle(1 * invZoom, innerColor, Math.max(0, 1 - cycle));
                 this.effectGraphics.strokeCircle(sprite.entRef.x, sprite.entRef.y, radius * 0.8);
             }
         }
@@ -1101,9 +1189,23 @@ export class RadarScene extends (window as any).Phaser.Scene {
         // 当实体状态变为 dockedAt !== null 时，说明已经进港，主动清理该实体的引导
         if (this.dockingGuidances && this.dockingGuidances.size > 0) {
             for (const [shipId, guidance] of this.dockingGuidances.entries()) {
-                const ent = ships.find(s => s.id === shipId || (s.shipRef && s.shipRef.ownerId === 'player' && s.id === 'player_ship' && shipId === 'player_ship'));
-                if (ent && ent.shipRef && ent.shipRef.dockedAt) {
+                // 如果发现飞船成功停靠，也要销毁文本
+                // 通过内存里的 dockedShips 或者 ships 检查
+                let isDocked = false;
+                
+                const dockedMatch = dockedShips.find(s => s.id === shipId);
+                if (dockedMatch && dockedMatch.dockedAt) {
+                    isDocked = true;
+                } else {
+                    const ent = ships.find(s => s.id === shipId || (s.shipRef && s.shipRef.ownerId === 'player' && s.id === 'player_ship' && shipId === 'player_ship'));
+                    if (ent && ent.shipRef && ent.shipRef.dockedAt) {
+                        isDocked = true;
+                    }
+                }
+                
+                if (isDocked) {
                     if (guidance.sprite) guidance.sprite.destroy();
+                    if (guidance.textObj) guidance.textObj.destroy();
                     this.dockingGuidances.delete(shipId);
                 }
             }

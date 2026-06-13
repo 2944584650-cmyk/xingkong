@@ -54,7 +54,7 @@ export function initAsteroidsForSector(sectorName: string, worldState: any, sect
                 hitFlash: 0
             });
         }
-        console.log(`[Asteroid] 在星区 ${sectorName} 生成了 ${count} 颗小行星 (矿带: ${belt.uid})`);
+        // console.log(`[Asteroid] 在星区 ${sectorName} 生成了 ${count} 颗小行星 (矿带: ${belt.uid})`);
     });
 }
 

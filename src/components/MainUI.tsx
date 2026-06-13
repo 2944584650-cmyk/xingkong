@@ -351,7 +351,7 @@ export const MainUI: React.FC = () => {
                     setActivePanel('boqu');
                 } else {
                     // 如果是没有特定UI的模块，可以保留一个提示或者干脆什么都不做
-                    console.log(`未绑定直接UI界面: ${modName}`);
+                    // console.log(`未绑定直接UI界面: ${modName}`);
                 }
                 setClickedModule(null);
             }

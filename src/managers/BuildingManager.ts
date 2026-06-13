@@ -92,7 +92,7 @@ export class BuildingManager {
      * 从本地存储加载空间站数据 (现已废弃独立存档，转为空操作，或者作为系统初始化的空壳)
      */
     static load() {
-        console.log('[BuildingManager] load() called. Now delegates to WorldState synchronization. station_modules local storage is deprecated.');
+        // console.log('[BuildingManager] load() called. Now delegates to WorldState synchronization. station_modules local storage is deprecated.');
         // 渲染加载由 Base.ts 控制，此处仅保证内存清空防污染
         this.stationModules = [];
         this.corePlaced = false;
@@ -102,7 +102,7 @@ export class BuildingManager {
      * 保存当前空间站数据到本地存储 (现已废弃独立存档，必须将修改同步回 world_state)
      */
     static save() {
-        console.log('[BuildingManager] save() called. Forwarding save request to WorldbookManager.');
+        // console.log('[BuildingManager] save() called. Forwarding save request to WorldbookManager.');
         if (this.stationModules.length === 0) return;
         
         // 核心修复：不能无脑写入 current_sector，必须看这批数据本身属于哪个星区
@@ -159,7 +159,7 @@ export class BuildingManager {
                 });
 
                 localStorage.setItem('world_state', JSON.stringify(ws));
-                console.log(`[BuildingManager] Saved ${this.stationModules.length} modules to sector ${targetSector} in world_state synchronously.`);
+                // console.log(`[BuildingManager] Saved ${this.stationModules.length} modules to sector ${targetSector} in world_state synchronously.`);
             }
         } catch(e) {
             console.error('[BuildingManager] 同步保存 world_state 失败:', e);
@@ -392,7 +392,7 @@ export class BuildingManager {
         this.stationModules.push(newMod);
         if (this.isCoreCategory(moduleId)) this.corePlaced = true;
         
-        console.log(`[建造系统] 成功放置模块 [${modData.name}] 于网格 (${gridX}, ${gridY})`);
+        // console.log(`[建造系统] 成功放置模块 [${modData.name}] 于网格 (${gridX}, ${gridY})`);
         this.save();
         return newMod;
     }
@@ -563,7 +563,7 @@ export class BuildingManager {
                             // 保持与硬盘数据引用一致，直接覆写
                             memMod.buildQueue = JSON.parse(JSON.stringify(mod.buildQueue));
                         }
-                        console.log(`[BuildingManager] 成功将订单写入星区 ${targetSector} 的模块 ${uid} 队列。`);
+                        // console.log(`[BuildingManager] 成功将订单写入星区 ${targetSector} 的模块 ${uid} 队列。`);
                         
                         // 抛出事件通知 UI 刷新
                         document.dispatchEvent(new CustomEvent('ui_chuanwu_refresh', { detail: { uid: uid } }));

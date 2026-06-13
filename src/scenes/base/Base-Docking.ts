@@ -2,6 +2,21 @@ import { ShipManager } from '../../managers/ShipManager.js';
 import { PlayerManager } from '../../managers/PlayerManager.js';
 import { EventBus, GameEvents } from '../../utils/EventBus.js';
 
+// 监听港务局超时的事件，清空被占用的泊位
+document.addEventListener('ui_docking_timeout', (e: any) => {
+    const { shipId } = e.detail;
+    if (shipId && berthRegistry[shipId]) {
+        // console.log(`[Base-Docking] 收到超时事件，清空飞船 ${shipId} 的占位记录`);
+        delete berthRegistry[shipId];
+        
+        // 尝试从 ShipManager 的内存属性中抹除预分配记录
+        const ship = ShipManager.getShipById(shipId);
+        if (ship && (ship as any).dockedBerthId) {
+            delete (ship as any).dockedBerthId;
+        }
+    }
+});
+
 /**
  * 停泊吸附判定系统 (通用)
  * 检查微观实体是否满足停靠到引导目标的条件，若满足则强制吸附
@@ -48,11 +63,11 @@ export function checkDockingGuidance(ent: any): boolean {
             }
 
             // 推进飞船的任务栈：如果当前是停泊任务，则完成它
+            
             if (ent.shipRef && ent.shipRef.taskStack && ent.shipRef.taskStack.length > 0) {
                 const currentTask = ent.shipRef.taskStack[0];
                 if (currentTask.action === 'DOCK_AT_STATION') {
-                    console.log(`[停靠物理系统] 飞船 ${ent.shipRef.name} 物理吸附停靠完成，弹出任务 DOCK_AT_STATION`);
-                    ent.shipRef.taskStack.shift();
+                    // console.log(`[停靠物理系统] 飞船 ${ent.shipRef.name} 物理吸附停靠完成。不在此处越权 shift，交由 ShipDecision 处理。`);
                 }
             }
 
@@ -149,7 +164,7 @@ export function allocateDockingBerth(moduleId: string, shipId: string): string |
  */
 export function debugDockingStatus(sectorName: string) {
     console.warn(`\n[调试] 正在检测星区【${sectorName}】的所有泊区状态...`);
-    console.log("当前泊位全局注册表字典:", berthRegistry);
+    // console.log("当前泊位全局注册表字典:", berthRegistry);
     const allModules = BuildingManager.getAllModules();
     if (!allModules) {
         console.warn("未能获取到 BuildingManager 模块数据。");
@@ -208,19 +223,19 @@ export function debugDockingStatus(sectorName: string) {
     });
 
     if (report.length === 0) {
-        console.log("该星区内没有发现带有泊位的模块。");
+        // console.log("该星区内没有发现带有泊位的模块。");
     } else {
-        report.forEach(r => console.log(r));
+        // report.forEach(r => console.log(r));
         console.warn("\n==== 泊位资源汇总 ====");
         for (const [type, data] of Object.entries(stats)) {
-            console.log(`型号 [${type}]: 共计 ${data.total} 个泊位，剩余 ${data.free} 个空位`);
+            // console.log(`型号 [${type}]: 共计 ${data.total} 个泊位，剩余 ${data.free} 个空位`);
         }
     }
     console.warn("==============================\n");
 }
 
 export function handleApplyDocking(e: any) {
-    console.log("【调试】收到停靠申请事件 ui_apply_docking", e.detail);
+    // console.log("【调试】收到停靠申请事件 ui_apply_docking", e.detail);
 
     const detail = e.detail;
     let moduleId = detail.moduleId || 'station';
@@ -352,6 +367,7 @@ export function handleApplyDocking(e: any) {
 
     // 调度自动驾驶目标 (传递 berthId 给自动驾驶AI，后续AI可以根据berth的坐标进行精确导航)
     // 将计算好的世界坐标与朝向也一并派发给 RadarScene 做特效渲染
+    const currentSector = (ship.location && ship.location.sector) ? ship.location.sector : (localStorage.getItem('current_sector') || '翡翠生态穹顶');
     document.dispatchEvent(new CustomEvent('ui_select_docking_target', { 
         detail: { 
             targetId: moduleId, 
@@ -360,7 +376,9 @@ export function handleApplyDocking(e: any) {
             worldY: berthWorldY,
             entryAngle: entryAngle,
             hullId: hullId,
-            shipId: ship.id // 直接传飞船的真实验明正身的 ID
+            shipId: ship.id, // 直接传飞船的真实验明正身的 ID
+            sector: currentSector, // 附加当前发出指令的星区信息，避免跨星区渲染引导线
+            timestamp: Date.now() // 记录发起时间，用于后续超时清理
         } 
     }));
 }

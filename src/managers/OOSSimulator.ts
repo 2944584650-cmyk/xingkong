@@ -19,6 +19,23 @@ export class OOSSimulator {
      */
     static updateGlobalOOS(worldState: any, dt: number) {
         updateBuildingOOS(worldState, dt);
+        
+        // 周期性结算矿区热力值 (例如每 10 秒)
+        const now = Date.now();
+        if (!worldState.lastMiningRateTick) {
+            worldState.lastMiningRateTick = now;
+        }
+        if (now - worldState.lastMiningRateTick >= 10000) { // 10秒
+            worldState.lastMiningRateTick = now;
+            if (worldState.asteroidBelts) {
+                worldState.asteroidBelts.forEach((belt: any) => {
+                    const mined = belt.minedFragments || 0;
+                    // 过去 10 秒产出了 mined，换算成每分钟就是 mined * 6
+                    belt.miningRate = mined * 6;
+                    belt.minedFragments = 0; // 清零，开始下一个 10 秒周期统计
+                });
+            }
+        }
     }
 
     // OOSSimulator 中针对单一飞船的冗余推演代码已经被删除

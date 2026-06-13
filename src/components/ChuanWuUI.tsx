@@ -137,7 +137,7 @@ export const ChuanWuUI: React.FC<ChuanWuUIProps> = ({ onClose, moduleData }) => 
         const success = BuildingManager.addBuildOrder(sourceModuleUid, buildData);
         
         if (success) {
-            console.log("【开始建造】已向船坞投递排队订单:", buildData);
+            // console.log("【开始建造】已向船坞投递排队订单:", buildData);
             alert("已将建造订单下发至船坞排队！您可以继续下单，船坞会自动按顺序建造。");
             // 不关闭窗口，让用户可以连续下单，通过状态触发重新渲染
             setPos({ ...pos }); // 触发一下重新渲染以更新预设面板的队列显示

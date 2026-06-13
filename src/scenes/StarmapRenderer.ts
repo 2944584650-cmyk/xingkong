@@ -6,11 +6,11 @@ export class StarmapRenderer {
     static _sectorPositions = new Map();
 
     static init(container, worldState, currentSectorName, viewingSectorName, onSelectSector) {
-        console.log("=== StarmapRenderer.init CALLED ===");
-        console.log("Container:", container);
-        console.log("WorldState:", worldState);
-        console.log("CurrentSectorName:", currentSectorName);
-        console.log("ViewingSectorName:", viewingSectorName);
+        // console.log("=== StarmapRenderer.init CALLED ===");
+        // console.log("Container:", container);
+        // console.log("WorldState:", worldState);
+        // console.log("CurrentSectorName:", currentSectorName);
+        // console.log("ViewingSectorName:", viewingSectorName);
 
         if (!container) {
             console.error("StarmapRenderer: Container is NULL!");
@@ -230,7 +230,7 @@ export class StarmapRenderer {
         // 初始化战报板
         StarmapRenderer._updateWarBoard(container, worldState);
 
-        console.log("=== StarmapRenderer.init COMPLETED ===");
+        // console.log("=== StarmapRenderer.init COMPLETED ===");
     }
 
     static drawMap(container, allSectors, currentSectorName, viewingSectorName, onSelectSector) {
@@ -563,12 +563,12 @@ export class StarmapRenderer {
 
             node.addEventListener('click', (e) => {
                 e.stopPropagation(); // 防止拖拽等事件干扰
-                console.log('--- NODE CLICKED ---', dest.name);
+                // console.log('--- NODE CLICKED ---', dest.name);
                 if (onSelectSector) onSelectSector(dest.name);
             });
             
             node.addEventListener('pointerenter', () => {
-                console.log('--- NODE HOVER ---', dest.name);
+                // console.log('--- NODE HOVER ---', dest.name);
                 const sidebarInfo = document.getElementById('react-sm-sidebar-info');
                 if (sidebarInfo) {
                     let html = `<h4 style="color: #fff; margin-bottom: 5px; border-bottom: 1px solid #00ff00; padding-bottom: 5px;">${dest.name}</h4>`;

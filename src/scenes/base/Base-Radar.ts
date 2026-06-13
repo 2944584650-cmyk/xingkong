@@ -737,6 +737,16 @@ export function updateSystemRadar(scene: any, time: number, delta: number) {
             // checkDockingGuidance 会修改 ent.isDocked 为 true
             checkDockingGuidance(ent);
             
+            // [同步修复] 如果宏观实体已经出库，微观实体强制解除 isDocked
+            if (ent.isDocked && ent.shipRef && !ent.shipRef.dockedAt) {
+                ent.isDocked = false;
+                
+                // 给予一个向前的弹射速度，模拟出港
+                const rad = (ent.rotation || 0) * Math.PI / 180;
+                ent.vx = Math.cos(rad) * 150;
+                ent.vy = Math.sin(rad) * 150;
+            }
+
             // 如果处于自动吸附接管状态或已经彻底吸附，则跳过后续的所有玩家输入/AI行为执行，直接结束本实体的物理逻辑刷新
             if (ent.isAutoDocking || ent.isDocked) {
                 if (ent.isDocked) {

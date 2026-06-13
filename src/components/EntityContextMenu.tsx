@@ -37,7 +37,7 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
         if (targetId) {
             const inv = InventoryManager.getInventory(targetId);
             console.group(`%c[Debug]%c 实体 [${targetId}] 库存信息`, 'color: #00ff00; background: #222; padding: 2px 4px; border-radius: 3px;', 'color: unset;');
-            console.log("容量使用:", InventoryManager.getCurrentVolume(targetId), "/", InventoryManager.getCapacity(targetId));
+            // console.log("容量使用:", InventoryManager.getCurrentVolume(targetId), "/", InventoryManager.getCapacity(targetId));
             console.table(inv);
             console.groupEnd();
         }
@@ -100,13 +100,13 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
                 
                 if (stationVirtualShip) {
                     const testInv = InventoryManager.getInventory(stationVirtualShip.id);
-                    console.log(`[ContextMenu] 本星区观察建筑 (${stationVirtualShip.id}) 肚子里有:`, JSON.parse(JSON.stringify(testInv)));
+                    // console.log(`[ContextMenu] 本星区观察建筑 (${stationVirtualShip.id}) 肚子里有:`, JSON.parse(JSON.stringify(testInv)));
                     document.dispatchEvent(new CustomEvent('OPEN_OBSERVE_PANEL', { detail: stationVirtualShip }));
                 } else {
                     // 2. 如果不是建筑，再去 ShipManager 当作飞船提取
                     let targetData = ShipManager.getShipById(targetId);
                     if (targetData) {
-                        console.log("[ContextMenu] 获取飞船数据成功，发送 OPEN_OBSERVE_PANEL", targetData);
+                        // console.log("[ContextMenu] 获取飞船数据成功，发送 OPEN_OBSERVE_PANEL", targetData);
                         document.dispatchEvent(new CustomEvent('OPEN_OBSERVE_PANEL', { detail: targetData }));
                     } else {
                         EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, {
@@ -250,6 +250,13 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
 
     // 只有在指挥模式、没有点在具体船只上，正好点在矿带圆形范围内，并且选中的船具备采矿能力时，才显示采矿按钮
     const renderMineBtn = menuData.isCommandMode && !menuData.targetShip && canMine && hasMiningCapability;
+    
+    // 计算当前星区所有矿带的总热力值 (碎片/分钟)
+    let sectorTotalMiningRate = 0;
+    if (ws && ws.asteroidBelts && currentSector) {
+        const localBelts = ws.asteroidBelts.filter((b: any) => b.sector === currentSector);
+        sectorTotalMiningRate = localBelts.reduce((sum: number, belt: any) => sum + (belt.miningRate || 0), 0);
+    }
 
     return (
         <div style={{
@@ -286,14 +293,19 @@ export const EntityContextMenu: React.FC<Props> = ({ menuData, onClose }) => {
                     </button>
 
                     {renderMineBtn && (
-                        <button
-                            onClick={(e) => handleCommand(GameEvents.CMD_MINE, e)}
-                            style={btnStyle('#00ffff')}
-                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 255, 0.2)'}
-                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                            ⛏ 采矿作业
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '5px' }}>
+                            <button
+                                onClick={(e) => handleCommand(GameEvents.CMD_MINE, e)}
+                                style={btnStyle('#00ffff')}
+                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 255, 0.2)'}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                ⛏ 采矿作业
+                            </button>
+                            <span style={{ fontSize: '12px', color: '#aaaaaa', marginLeft: '5px' }}>
+                                ({sectorTotalMiningRate} 碎/分)
+                            </span>
+                        </div>
                     )}
                     
                     {menuData.targetShip && (

@@ -71,7 +71,7 @@ export function updateBuildingOOS(worldState: any, dt: number) {
                     const newBuildingShip = ShipManager.createShip(currentOrder);
                     oosBuildingShips.push(newBuildingShip); // 加到当前的推演列表里
                     
-                    console.log(`[OOS 建造] 船坞 ${dock.uid} 提取订单，后台虚影 ${newBuildingShip.id} 开始组装...`);
+                    // console.log(`[OOS 建造] 船坞 ${dock.uid} 提取订单，后台虚影 ${newBuildingShip.id} 开始组装...`);
                 }
             } 
             // 如果已经在造了，开始推演进度
@@ -127,7 +127,7 @@ export function updateBuildingOOS(worldState: any, dt: number) {
                                     location: { sector: newShip.location.sector, x: newShip.location.x, y: newShip.location.y }
                                 });
                                 PlayerManager.saveStats(pd);
-                                console.log(`[资产入库] OOS 建造的玩家船只 ${newShip.id} 已正式入列。`);
+                                // console.log(`[资产入库] OOS 建造的玩家船只 ${newShip.id} 已正式入列。`);
                             }
                         });
                     }

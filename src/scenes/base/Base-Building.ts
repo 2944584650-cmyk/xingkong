@@ -20,7 +20,7 @@ export function handleStartShipBuild(e: any) {
     
     // 底层物理管理器接管注册
     const newShip = ShipManager.createShip(buildData);
-    console.log(`[建造队列] 物理底层已生成新建造中船只实体：${newShip.id}`);
+    // console.log(`[建造队列] 物理底层已生成新建造中船只实体：${newShip.id}`);
 }
 
 /**
@@ -67,7 +67,7 @@ export function finishShipBuilding(targetEntityId: string, oldRef: any, spawnX: 
                 location: { sector: newShip.location.sector, x: newShip.location.x, y: newShip.location.y }
             });
             PlayerManager.saveStats(pd);
-            console.log(`[资产入库] 玩家新建造的船只/模块 ${newShip.id} 已正式入列。`);
+            // console.log(`[资产入库] 玩家新建造的船只/模块 ${newShip.id} 已正式入列。`);
         }
     }
     
@@ -124,7 +124,7 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
                 if (!hasActiveChild) {
                     const order = mod.buildQueue.shift();
                     if (order) {
-                        console.log(`[全宇宙队列系统] 星区 [${station.sector}] 船坞 ${mod.uid} 闲置，提取订单并开始建造:`, order);
+                        // console.log(`[全宇宙队列系统] 星区 [${station.sector}] 船坞 ${mod.uid} 闲置，提取订单并开始建造:`, order);
                         
                         if (!order.location) {
                             let spawnX = 500, spawnY = 275;
@@ -169,7 +169,7 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
                         }
                         
                         const newShip = ShipManager.createShip(order);
-                        console.log(`[全宇宙队列系统] 实体生成结果:`, newShip);
+                        // console.log(`[全宇宙队列系统] 实体生成结果:`, newShip);
                         
                         needsSave = true;
                         

@@ -237,15 +237,15 @@ export class Base extends Phaser.Scene {
             const detail = e.detail;
             if (detail.targetShip) {
                 // 点击时在 F12 打印该实体的装备与属性细节
-                console.log(`=== 选中实体: ${detail.targetShip.id} ===`);
-                console.log("微观实体数据:", detail.targetShip);
-                console.log("== 【容量排查】 ==");
-                console.log("这艘船底盘ID是: ", detail.targetShip.hullId || (detail.targetShip.shipRef && detail.targetShip.shipRef.hullId));
-                console.log("微观实体的 maxInventory 是: ", detail.targetShip.maxInventory);
+                // console.log(`=== 选中实体: ${detail.targetShip.id} ===`);
+                // console.log("微观实体数据:", detail.targetShip);
+                // console.log("== 【容量排查】 ==");
+                // console.log("这艘船底盘ID是: ", detail.targetShip.hullId || (detail.targetShip.shipRef && detail.targetShip.shipRef.hullId));
+                // console.log("微观实体的 maxInventory 是: ", detail.targetShip.maxInventory);
                 if (detail.targetShip.shipRef) {
-                    console.log("宏观对象(shipRef) 的 maxInventory 是: ", detail.targetShip.shipRef.maxInventory);
-                    console.log("宏观对象(shipRef):", detail.targetShip.shipRef);
-                    console.log("挂载的武器(activeWeapons):", detail.targetShip.shipRef.activeWeapons);
+                    // console.log("宏观对象(shipRef) 的 maxInventory 是: ", detail.targetShip.shipRef.maxInventory);
+                    // console.log("宏观对象(shipRef):", detail.targetShip.shipRef);
+                    // console.log("挂载的武器(activeWeapons):", detail.targetShip.shipRef.activeWeapons);
                 } else {
                     console.warn("注意：该实体没有绑定 shipRef，将无法开火或被保存！");
                 }
@@ -253,9 +253,9 @@ export class Base extends Phaser.Scene {
                 // 为了万无一失，直接用我刚刚修复好的函数再算一遍：
                 if (typeof window !== 'undefined' && (window as any).InventoryManager) {
                     const finalCap = (window as any).InventoryManager.getCapacity(detail.targetShip.id, detail.targetShip);
-                    console.log("InventoryManager算出来的最终容量是: ", finalCap);
+                    // console.log("InventoryManager算出来的最终容量是: ", finalCap);
                 }
-                console.log("==================");
+                // console.log("==================");
 
                 // 如果按住了 Shift，则多选，否则单选
                 const shiftKey = this.input.keyboard.checkDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT));
@@ -431,27 +431,91 @@ export class Base extends Phaser.Scene {
             const pd = PlayerManager.getStats();
             let hasAssigned = false;
 
-            this.selectedUnitIds.forEach(unitId => {
+            this.selectedUnitIds.forEach((unitId, index) => {
                 const targetShip = ShipManager.getShipById(unitId);
                 if (!targetShip) return;
 
                 if (pd.ownedShips && pd.ownedShips.some((s: any) => s.id === unitId) && unitId !== pd.playerShipId) {
-                    import('../managers/ship/ShipDecision.js').then(module => {
-                        const order = {
-                            type: 'MINE',
-                            payload: { targetSector: targetShip.location?.sector || localStorage.getItem('current_sector') }
-                        };
-                        module.ShipDecision.assignMacroOrder(targetShip, order);
-                        // console.log(`【DEBUG】下达采矿指令成功: ${targetShip.name} 将前往星区 ${order.payload.targetSector} 采矿`);
-                        // console.log(`【DEBUG】飞船当前 orderQueue:`, targetShip.orderQueue);
-                    });
+                    // 1. 清空旧任务
+                    targetShip.orderQueue = [];
+                    targetShip.taskStack = [];
+                    targetShip.path = [];
+                    
+                    if (targetShip.commandState === 'DOCK' || targetShip.approachingDock) {
+                        ShipManager.clearDockingGuidance(unitId);
+                    }
+                    targetShip.commandState = null;
+                    targetShip.commandTargetId = null;
+
+                    // --- 停泊状态拦截与自动出港 ---
+                    let isDockedOrDocking = false;
+                    let currentSector = localStorage.getItem('current_sector');
+                    const currentViewSector = this.viewingSector || currentSector;
+                    const macroSector = this.sectorSimulations[currentViewSector];
+                    let microEnt = null;
+                    
+                    if (macroSector) {
+                        microEnt = macroSector.defenders.find(s => s.id === unitId) || macroSector.attackers.find(s => s.id === unitId);
+                        if (microEnt && (microEnt.isAutoDocking || microEnt.isDocked)) {
+                            isDockedOrDocking = true;
+                        }
+                    }
+                    
+                    if (targetShip.dockedAt || targetShip.state === 'DOCKED' || targetShip.commandState === 'DOCK') {
+                        isDockedOrDocking = true;
+                    }
+
+                    if (isDockedOrDocking) {
+                        if (microEnt) {
+                            microEnt.isDocked = false;
+                            microEnt.isAutoDocking = false;
+                            microEnt.dockingGuidanceTarget = null;
+                            microEnt.dockingLookOverride = null;
+                            microEnt.dockingStrafeDx = 0;
+                            microEnt.dockingStrafeDy = 0;
+                        }
+                        const spawnX = targetShip.location?.x || (microEnt ? microEnt.x : 500);
+                        const spawnY = targetShip.location?.y || (microEnt ? microEnt.y : 275);
+                        const spawnSector = targetShip.location?.sector || currentSector;
+                        ShipManager.undockShip(unitId, { x: spawnX, y: spawnY, sector: spawnSector });
+                    }
+
+                    // 2. 指派精确坐标移动，并压入采矿任务
+                    const targetSector = targetShip.location?.sector || currentSector;
+
+                    // 为了容纳多船编队采矿，给目标点加个小偏移
+                    let offsetX = 0;
+                    let offsetY = 0;
+                    const validUnitIds = this.selectedUnitIds.filter(id => pd.ownedShips.some((s: any) => s.id === id) && id !== pd.playerShipId);
+                    if (validUnitIds.length > 1) {
+                        const formationRadius = Math.max(30, Math.sqrt(validUnitIds.length) * 20);
+                        const angle = (index / validUnitIds.length) * Math.PI * 2;
+                        const currentRadius = index === 0 ? 0 : formationRadius;
+                        offsetX = Math.cos(angle) * currentRadius;
+                        offsetY = Math.sin(angle) * currentRadius;
+                    }
+
+                    const targetX = detail.x + offsetX;
+                    const targetY = detail.y + offsetY;
+
+                    // [重要] 把 MINE_SECTOR 任务压入（它会在移动结束后开始执行）
+                    targetShip.taskStack.push({ action: 'MINE_SECTOR', targetSector: targetSector });
+
+                    // 让飞船飞向目标坐标
+                    targetShip.commandState = 'MOVE_TO';
+                    targetShip.moveTarget = { x: targetX, y: targetY };
+                    
+                    if (macroSector) {
+                        if (microEnt) microEnt.moveTarget = { x: targetX, y: targetY };
+                    }
+
                     hasAssigned = true;
                 }
             });
 
             if (hasAssigned) {
-                this.showRTSFeedback(null, detail.x, detail.y, '#00ffff', '开始采矿');
-                EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff;">[战术] 指令已发送：指定单位前往小行星带执行采矿作业。</div>` }));
+                this.showRTSFeedback(null, detail.x, detail.y, '#00ffff', '前往采矿');
+                EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff;">[战术] 指令已发送：指定单位前往小行星带执行精准采矿作业。</div>` }));
             }
         };
         EventBus.addEventListener(GameEvents.CMD_MINE, this._cmdMineHandler);
@@ -562,7 +626,7 @@ export class Base extends Phaser.Scene {
             console.warn("==== [星区建筑阵营调试触发] ====");
             const allMods = BuildingManager.getAllModules();
             if (!allMods || allMods.length === 0) {
-                console.log("当前星区没有任何建筑。");
+                // console.log("当前星区没有任何建筑。");
                 return;
             }
             
@@ -596,9 +660,9 @@ export class Base extends Phaser.Scene {
                     ID: ship.id
                 }));
                 console.table(summary);
-                console.log(`共统计 ${summary.length} 艘飞船实体。`);
+                // console.log(`共统计 ${summary.length} 艘飞船实体。`);
             } else {
-                console.log("无法获取 ShipManager 实例。");
+                // console.log("无法获取 ShipManager 实例。");
             }
             console.warn("=========================================");
         });
@@ -951,7 +1015,7 @@ export class Base extends Phaser.Scene {
             
             if (dist < threshold) {
                 // --- 触发跃迁 ---
-                console.log(`[Jump Debug] 实体 ${entity.id} (isPlayer=${isPlayer}) 撞到了星门: ${gateName}，距离: ${Math.round(dist)}`);
+                // console.log(`[Jump Debug] 实体 ${entity.id} (isPlayer=${isPlayer}) 撞到了星门: ${gateName}，距离: ${Math.round(dist)}`);
                 
                 // 1. 播放吸入特效
                 this.createImplosion(null, entity.x, entity.y);

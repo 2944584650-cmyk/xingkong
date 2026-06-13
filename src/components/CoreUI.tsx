@@ -151,7 +151,7 @@ export const CoreUI: React.FC<CoreUIProps> = ({ onClose, moduleData }) => {
                 }
             }
 
-            console.log("[CoreUI Debug] 定时读取目标模块 UID:", targetUid, "-> 源数据对象:", sourceOfTruth);
+            // console.log("[CoreUI Debug] 定时读取目标模块 UID:", targetUid, "-> 源数据对象:", sourceOfTruth);
 
             if (sourceOfTruth && sourceOfTruth.internalModules) {
                 const mappedSlots: { [key: number]: any } = {};
@@ -686,7 +686,7 @@ export const CoreUI: React.FC<CoreUIProps> = ({ onClose, moduleData }) => {
                                 onClick={() => {
                                     const realMod = moduleData.module || moduleData;
                                     const targetUid = realMod.stationUid || realMod.uid;
-                                    console.log("[CoreUI] 加装模块:", { targetUid, selectedSlotIndex, key, realMod });
+                                    // console.log("[CoreUI] 加装模块:", { targetUid, selectedSlotIndex, key, realMod });
                                     if (targetUid) {
                                         InternalModuleManager.installInternalModule(targetUid, selectedSlotIndex, key);
                                     }
@@ -726,7 +726,7 @@ export const CoreUI: React.FC<CoreUIProps> = ({ onClose, moduleData }) => {
                                 onClick={() => {
                                     const realMod = moduleData.module || moduleData;
                                     const targetUid = realMod.stationUid || realMod.uid;
-                                    console.log("[CoreUI] 卸载模块:", { targetUid, selectedSlotIndex, realMod });
+                                    // console.log("[CoreUI] 卸载模块:", { targetUid, selectedSlotIndex, realMod });
                                     if (targetUid) {
                                         InternalModuleManager.uninstallInternalModule(targetUid, selectedSlotIndex);
                                     }

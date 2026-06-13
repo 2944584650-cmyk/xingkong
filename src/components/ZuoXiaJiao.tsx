@@ -81,7 +81,7 @@ export const ZuoXiaJiao: React.FC<{ width?: string | number }> = ({ width = '38%
     }, [hullId]);
 
     const handleAreaClick = (area: ShipArea) => {
-        console.log(`Clicked area: ${area.name}`);
+        // console.log(`Clicked area: ${area.name}`);
         // Here you can implement the logic to pass the context to the LLM
         // For example, calling an LLMService method or dispatching an event
         document.dispatchEvent(new CustomEvent('ship_area_clicked', {

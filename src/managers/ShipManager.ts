@@ -305,41 +305,93 @@ export class Ship implements ShipData {
 
         // 初始化标记
         this.isActivelyMining = false;
+        this.isMiningOverloaded = false;
 
         if (minerWeapon) {
             const InventoryManager = (window as any).InventoryManager;
             let currentFrag = InventoryManager ? InventoryManager.getInventory(this.id)['asteroid_fragment'] || 0 : 0;
             const isFull = currentFrag >= this.maxInventory; // TODO: 使用统一的容量逻辑，这里暂时保留旧的粗略判定避免报错
 
-            // 1. 检查是否在矿带范围内
+            // 1. 检查是否在矿带范围内，并获取最近的矿带
             let inAsteroidBelt = false;
+            let closestBelt = null;
             const currentSectorObj = worldState.sectors?.find(s => s.name === this.location.sector);
             if (currentSectorObj && worldState.asteroidBelts) {
                 const beltsInSector = worldState.asteroidBelts.filter(b => b.sector === this.location.sector);
+                let minDist = Infinity;
                 for (const belt of beltsInSector) {
                     const distToBeltCenter = Math.hypot(belt.worldX - this.location.x, belt.worldY - this.location.y);
                     if (distToBeltCenter <= belt.radius) {
                         inAsteroidBelt = true;
-                        break;
+                    }
+                    if (distToBeltCenter < minDist) {
+                        minDist = distToBeltCenter;
+                        closestBelt = belt;
                     }
                 }
             }
 
-            // 只有未满载且在矿带内，才允许产出
-            if (!isFull && inAsteroidBelt) {
+            // 只有未满载且在矿带内，才允许判定产出
+            if (!isFull && inAsteroidBelt && closestBelt) {
                 this.isActivelyMining = true; // 告诉前端画吸收特效
-                this._miningTimer += dt;
                 
+                // 排队上岗机制：检查当前船是否可以实际开采
                 // 读取武器配置，如果没有配置则使用默认值
                 const fireRate = minerWeapon.stats.fireRate || 3.0;
                 const yieldAmount = minerWeapon.stats.miningYield || 100;
+                // 计算当前飞船的热力贡献预期 (按每秒产出折算成 OOS 的 miningRate 约等于产出量 * 6)
+                // OOS 中是 mined * 6，mined = yieldAmount / fireRate。所以 expectedRate = (yieldAmount / fireRate) * 6
+                const expectedRate = (yieldAmount / fireRate) * 6;
                 
-                // 每 fireRate 秒产出 yieldAmount 个小行星碎块
-                if (this._miningTimer >= fireRate) {
-                    this._miningTimer = 0;
-                    const InventoryManager = (window as any).InventoryManager;
-                    if (InventoryManager) {
-                        InventoryManager.addCargo(this.id, 'asteroid_fragment', yieldAmount);
+                // 为了判断当前飞船是否可以开采，我们需要知道它在当前星区所有采矿船中的排队顺序
+                // 我们以飞船的 ID 排序作为稳定的排队依据（如果需要按到达时间，可以在 Ship 上加 arrivalTime）
+                // 暂时用所有在此星区且有 MINE_SECTOR 任务或状态为 MINING 的船
+                const localMiners = allShips.filter(s => 
+                    s.location.sector === this.location.sector && 
+                    (s.commandState === 'MINING' || (s.taskStack && s.taskStack.length > 0 && s.taskStack[0].action === 'MINE_SECTOR')) &&
+                    s.activeWeapons && s.activeWeapons.some((w:any) => w.compId === 'miner_beam_mk1')
+                ).sort((a, b) => {
+                    // 玩家优先级最高 (强行插队)
+                    if (a.ownerId === 'player' && b.ownerId !== 'player') return -1;
+                    if (b.ownerId === 'player' && a.ownerId !== 'player') return 1;
+                    // 否则按 ID 字典序排队
+                    return a.id.localeCompare(b.id);
+                });
+
+                // 计算在我之前的船已经占用的预期热力值
+                let accumulatedRate = 0;
+                for (const m of localMiners) {
+                    if (m.id === this.id) break;
+                    // 计算前船的预期热力
+                    let mYield = 100;
+                    let mFireRate = 3.0;
+                    if (m.activeWeapons) {
+                        const mWep = m.activeWeapons.find((w:any) => w.compId === 'miner_beam_mk1');
+                        if (mWep) {
+                            mYield = mWep.stats.miningYield || 100;
+                            mFireRate = mWep.stats.fireRate || 3.0;
+                        }
+                    }
+                    accumulatedRate += (mYield / mFireRate) * 6;
+                }
+
+                // 判断是否超载：如果在我之前的船加上我自己的热力值超过了 5000，我本回合就只能排队等候
+                if (accumulatedRate + expectedRate >= 5000) {
+                    this.isMiningOverloaded = true;
+                    // 排队等候时，不产出资源，也不增加热力值，保留采矿动作(红圈)
+                } else {
+                    this.isMiningOverloaded = false;
+                    this._miningTimer += dt;
+                    
+                    // 每 fireRate 秒产出 yieldAmount 个小行星碎块
+                    if (this._miningTimer >= fireRate) {
+                        this._miningTimer = 0;
+                        if (InventoryManager) {
+                            InventoryManager.addCargo(this.id, 'asteroid_fragment', yieldAmount);
+                            // 累加产出到对应的星区矿带热力值统计中
+                            if (closestBelt.minedFragments === undefined) closestBelt.minedFragments = 0;
+                            closestBelt.minedFragments += yieldAmount;
+                        }
                     }
                 }
             }
@@ -402,7 +454,7 @@ export class Ship implements ShipData {
                                     if (InventoryManager) {
                                         // 强制使用统一的 API 将物资存入空间站公库，不再允许模块私自生成库存
                                         InventoryManager.addCargo(targetStationUid, good, amount, mod);
-                                        console.log(`[建筑物流 - F12] 无人机物资 ${good} x${amount} 已存入空间站公库 (UID:${targetStationUid})`);
+                                        // console.log(`[建筑物流 - F12] 无人机物资 ${good} x${amount} 已存入空间站公库 (UID:${targetStationUid})`);
                                     } else {
                                         console.warn(`[建筑物流] 缺少 InventoryManager，物资 ${good} x${amount} 转移失败。`);
                                     }
@@ -487,6 +539,10 @@ export class Ship implements ShipData {
             // [修复]: 处于停泊状态的飞船不参与物理更新，但它的“任务大脑”依然需要流转（比如转移货物）
             // 否则在物理停泊完成那一刻弹出 DOCK 任务后，它就会在这里被永远短路，无法执行 TRANSFER_CARGO
             if (this.taskStack && this.taskStack.length > 0) {
+                // 如果被加了防抖锁，说明它正在等待异步结果，此时强制阻塞这艘船的任务流转，防止引擎重复提交造成死锁
+                if (this.commandState === 'TRADING' || this.commandState === 'UNDOCKING') {
+                    return; 
+                }
                 const currentTask = this.taskStack[0];
                 ShipExecution.executeAtomicTask(this, currentTask, dt, worldState);
             }
@@ -515,6 +571,9 @@ export class Ship implements ShipData {
 
             // 任务执行模块：委托给执行模块处理“怎么做”
             if (this.taskStack && this.taskStack.length > 0) {
+                if (this.commandState === 'TRADING' || this.commandState === 'UNDOCKING') {
+                    return; // 等待异步完成
+                }
                 const currentTask = this.taskStack[0];
                 ShipExecution.executeAtomicTask(this, currentTask, dt, worldState);
             }
@@ -565,7 +624,7 @@ export class ShipManager {
                     }
                 });
                 
-                console.log(`[ShipManager] Loaded ${this.ships.length} ships from galaxy state.`);
+                // console.log(`[ShipManager] Loaded ${this.ships.length} ships from galaxy state.`);
             } catch (e) {
                 console.error('Failed to load ship data', e);
                 this.ships = [];
@@ -589,7 +648,7 @@ export class ShipManager {
                     
                     if (!macroShip) {
                         // 如果宏观宇宙里没有，创建它（默认为闲置）
-                        console.log(`[ShipManager] Syncing player ship ${pShip.name} to macro universe...`);
+                        // console.log(`[ShipManager] Syncing player ship ${pShip.name} to macro universe...`);
                         
                         // 优先使用记录的位置，如果没有则丢到当前星区
                         let spawnLoc = pShip.location || { sector: currentSector, x: 500, y: 300 };
@@ -610,7 +669,7 @@ export class ShipManager {
                             stats: { hp: pShip.hp, maxHp: pShip.maxHp || 100 }
                         });
                         this.ships.push(macroShip);
-                        console.log(`[ShipManager] Successfully created macro ship for player: ${macroShip.id}`);
+                        // console.log(`[ShipManager] Successfully created macro ship for player: ${macroShip.id}`);
                     } else {
                         // 如果已有，同步关键配置（防止玩家在机库改了配件但宏观实体没变）
                         macroShip.hullId = pShip.hullId;
@@ -638,7 +697,7 @@ export class ShipManager {
                 this.ships = this.ships.filter(s => {
                     // 如果是玩家的船，但不在资产库里，并且不是无人机（因为无人机作为消耗品不记录在玩家资产库），则说明是已出售/销毁的幽灵船
                     if (s.ownerId === 'player' && !validIds.has(s.id) && s.type !== 'drone') {
-                        console.log(`[ShipManager] Removing ghost ship ${s.name} (sold/destroyed).`);
+                        // console.log(`[ShipManager] Removing ghost ship ${s.name} (sold/destroyed).`);
                         return false;
                     }
                     return true;
@@ -647,7 +706,7 @@ export class ShipManager {
                 if (this.ships.length !== beforeCount) {
                     this.save();
                 }
-                console.log(`[ShipManager] Player ships sync complete. Total ships in universe: ${this.ships.length}`);
+                // console.log(`[ShipManager] Player ships sync complete. Total ships in universe: ${this.ships.length}`);
             } else {
                 console.warn("[ShipManager] 警告：没有找到 player_owned_ships 数据！");
             }
@@ -661,7 +720,7 @@ export class ShipManager {
         this.ships = [];
         this.fleets = [];
         this.save();
-        console.log(`[ShipManager] 所有飞船已被清空。`);
+        // console.log(`[ShipManager] 所有飞船已被清空。`);
     }
 
     static save() {
@@ -786,7 +845,7 @@ export class ShipManager {
             deadShips.forEach(deadShip => {
                 if (deadShip.pilotId && deadShip.pilotId !== 'player' && isNaN(Number(deadShip.pilotId))) {
                     NPCManager.getInstance().killNPC(deadShip.pilotId);
-                    console.log(`[ShipManager] 飞船 ${deadShip.id} 坠毁，驾驶员 ${deadShip.pilotId} 阵亡。`);
+                    // console.log(`[ShipManager] 飞船 ${deadShip.id} 坠毁，驾驶员 ${deadShip.pilotId} 阵亡。`);
                 }
             });
 
@@ -938,7 +997,7 @@ export class ShipManager {
         if (!this.dockingRegistries[hostId]) this.dockingRegistries[hostId] = new Set();
         this.dockingRegistries[hostId].add(shipId);
         
-        console.log(`[ShipManager] ⚓ Ship ${ship.name} docked at ${hostId} (Berth: ${berthId || 'Unknown'})`);
+        // console.log(`[ShipManager] ⚓ Ship ${ship.name} docked at ${hostId} (Berth: ${berthId || 'Unknown'})`);
         this.save();
         return true;
     }
@@ -973,7 +1032,7 @@ export class ShipManager {
             if (spawnLocation.sector) spawnLocation.sector = spawnLocation.sector;
         }
 
-        console.log(`[ShipManager] 🚀 Ship ${ship.name} undocked from ${hostId}`);
+        // console.log(`[ShipManager] 🚀 Ship ${ship.name} undocked from ${hostId}`);
         this.save();
         return true;
     }
@@ -1154,7 +1213,7 @@ export class ShipManager {
                 drone.orderQueue = [];
                 drone.taskStack = [];
                 drone.state = 'IDLE'; 
-                console.log(`[ShipManager] 强制召回无人机: ${drone.id}`);
+                // console.log(`[ShipManager] 强制召回无人机: ${drone.id}`);
             }
         }
         

@@ -15,12 +15,12 @@ const ZheZhao: React.FC = () => {
                 if (macroShip && macroShip.state === 'WARP') {
                     if (!isWarping) {
                         setIsWarping(true);
-                        console.log(`%c[ZheZhao Debug] 玩家进入 WARP 状态！当前进度: ${(macroShip.travelProgress * 100).toFixed(2)}%`, 'color: #00ffff; font-weight: bold;');
+                        // console.log(`%c[ZheZhao Debug] 玩家进入 WARP 状态！当前进度: ${(macroShip.travelProgress * 100).toFixed(2)}%`, 'color: #00ffff; font-weight: bold;');
                     }
                 } else {
                     if (isWarping) {
                         setIsWarping(false);
-                        console.log(`%c[ZheZhao Debug] 玩家脱离 WARP 状态！当前状态: ${macroShip ? macroShip.state : '未知'}`, 'color: #ffaa00; font-weight: bold;');
+                        // console.log(`%c[ZheZhao Debug] 玩家脱离 WARP 状态！当前状态: ${macroShip ? macroShip.state : '未知'}`, 'color: #ffaa00; font-weight: bold;');
                     }
                 }
             }

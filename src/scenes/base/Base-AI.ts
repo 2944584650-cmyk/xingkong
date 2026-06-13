@@ -229,7 +229,7 @@ export function processAILogic(ent, allShipsList, dt, context) {
             thrustMultiplier = 0;
             const now = Date.now();
             if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
-                console.log(`[物理层-采矿] 飞船 ${ent.id} 无法在 ${simSectorName} 找到任何宏观矿带！`);
+                // console.log(`[物理层-采矿] 飞船 ${ent.id} 无法在 ${simSectorName} 找到任何宏观矿带！`);
                 ent.lastDebugTime = now;
             }
         }
@@ -262,7 +262,7 @@ export function processAILogic(ent, allShipsList, dt, context) {
             // --- 节流的物理层 F12 调试 ---
             const now = Date.now();
             if (!ent.lastDebugTime || now - ent.lastDebugTime > 1000) {
-                console.log(`[物理层-移动] 飞船 ${ent.id} 前往(${ent.moveTarget.x.toFixed(0)}, ${ent.moveTarget.y.toFixed(0)}), 当前(${ent.x.toFixed(0)}, ${ent.y.toFixed(0)}), 距离: ${dist.toFixed(0)}`);
+                // console.log(`[物理层-移动] 飞船 ${ent.id} 前往(${ent.moveTarget.x.toFixed(0)}, ${ent.moveTarget.y.toFixed(0)}), 当前(${ent.x.toFixed(0)}, ${ent.y.toFixed(0)}), 距离: ${dist.toFixed(0)}`);
                 ent.lastDebugTime = now;
             }
             
@@ -642,9 +642,9 @@ export function processAILogic(ent, allShipsList, dt, context) {
                     const berthId = ent.dockingGuidanceTarget?.berthId;
                     if (hostId) {
                         ShipManager.dockShip(ent.id, hostId, berthId);
-                        // 清除任务栈里的 DOCK_AT_STATION，让飞船继续执行下一步
+                        // [修复] 此处不能越权 shift()！交由 ShipDecision 处理
                         if (ent.shipRef && ent.shipRef.taskStack && ent.shipRef.taskStack.length > 0 && ent.shipRef.taskStack[0].action === 'DOCK_AT_STATION') {
-                            ent.shipRef.taskStack.shift();
+                            // console.log(`[Base-AI.ts] 飞船 ${ent.shipRef.name} 到达泊位触发入库。取消本地 shift，交由 ShipDecision 验证状态弹栈。`);
                         }
                         ent.isDocked = true;
                         return { action: 'dock', hostId: hostId };

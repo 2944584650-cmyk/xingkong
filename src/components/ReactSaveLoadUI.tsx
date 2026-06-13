@@ -86,7 +86,7 @@ export const ReactSaveLoadUI: React.FC<ReactSaveLoadUIProps> = ({ mode, onClose 
                         if (saveBundle) {
                             await writeToOPFS(slotId, saveBundle);
                             localStorage.removeItem(`save_bundle_${slotId}`);
-                            console.log(`Migrated save slot ${slotId} to OPFS`);
+                            // console.log(`Migrated save slot ${slotId} to OPFS`);
                         }
                     }
                 }

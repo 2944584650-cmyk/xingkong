@@ -74,9 +74,9 @@ export class WorldbookManager {
                             isWorking: true
                         };
                     }
-                    console.log(`[生成模块] ${moduleId} 装配内构成功:`, internalModulesConfig, "生成结果:", modObj.internalModules);
+                    // console.log(`[生成模块] ${moduleId} 装配内构成功:`, internalModulesConfig, "生成结果:", modObj.internalModules);
                 } else {
-                    console.log(`[生成模块] ${moduleId} 蓝图支持内构，但当前模板未配置内构 (internalModulesConfig为空)`);
+                    // console.log(`[生成模块] ${moduleId} 蓝图支持内构，但当前模板未配置内构 (internalModulesConfig为空)`);
                 }
             }
             
@@ -113,7 +113,7 @@ export class WorldbookManager {
         worldState.stations.push(newStation);
         this.saveWorldState(worldState);
 
-        console.log(`[WorldbookManager] 成功在 ${sectorName} 生成了类型为 ${templateType} 的空间站`);
+        // console.log(`[WorldbookManager] 成功在 ${sectorName} 生成了类型为 ${templateType} 的空间站`);
         return newStation;
     }
 
@@ -133,13 +133,13 @@ export class WorldbookManager {
                     if (!parsed.stations) {
                         parsed.stations = [];
                         modified = true;
-                        console.log("[WorldbookManager] 为旧存档补全了初始空间站数据字段");
+                        // console.log("[WorldbookManager] 为旧存档补全了初始空间站数据字段");
                     }
                     
                     if (!parsed.asteroidBelts) {
                         parsed.asteroidBelts = [];
                         modified = true;
-                        console.log("[WorldbookManager] 为旧存档补全了初始矿带数据字段");
+                        // console.log("[WorldbookManager] 为旧存档补全了初始矿带数据字段");
                     }
 
                     // 强制清理旧版存档中冗余的经济属性（减小存档体积并防止干扰新系统）
@@ -198,7 +198,7 @@ export class WorldbookManager {
         const defaultState: any = { factions, sectors, relations: {}, orders: [], ships: [], stations: [], asteroidBelts: [] };
 
         // --- 开局全随机分配空间站逻辑 ---
-        console.log("[DEBUG] 开始生成 NPC 空间站, moduleData:", moduleData);
+        // console.log("[DEBUG] 开始生成 NPC 空间站, moduleData:", moduleData);
         
         // 兼容不同的 JSON 导入格式
         const realModuleData = (moduleData as any).MODULES || (moduleData as any).default?.MODULES || {};
@@ -238,7 +238,7 @@ export class WorldbookManager {
                             isWorking: true
                         };
                     }
-                    console.log(`[getWorldState生成] ${moduleId} 装配内构成功:`, internalModulesConfig, "生成结果:", modObj.internalModules);
+                    // console.log(`[getWorldState生成] ${moduleId} 装配内构成功:`, internalModulesConfig, "生成结果:", modObj.internalModules);
                 }
             }
             
@@ -317,7 +317,9 @@ export class WorldbookManager {
                         // 矿带半径扩大 5 倍！(原来是 1500~2500，现在直接 7500~12500)
                         radius: (1500 + Math.random() * 1000) * 5,
                         resourceType: Math.random() > 0.5 ? 'titanium' : 'crystal',
-                        richness: 1.0 + Math.random() * 2.0 // 丰富度也大幅提升，确保挖不空
+                        richness: 1.0 + Math.random() * 2.0, // 丰富度也大幅提升，确保挖不空
+                        minedFragments: 0,
+                        miningRate: 0
                     });
                 }
             });
@@ -527,7 +529,7 @@ export class WorldbookManager {
                     const target = worldState.sectors[Math.floor(Math.random() * worldState.sectors.length)];
                     target.factionId = f.id;
                     f.influence = 1000; 
-                    console.log(`[星区新闻] 灭亡的势力 '${f.name}' 在 '${target.name}' 发动了武装起义！`);
+                    // console.log(`[星区新闻] 灭亡的势力 '${f.name}' 在 '${target.name}' 发动了武装起义！`);
                 }
             });
 

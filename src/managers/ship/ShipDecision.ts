@@ -33,6 +33,29 @@ export class ShipDecision {
         
         // 判断1：如果货舱容量达到 80%，进入返航卸货流程
         if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
+            // 检查是否有无人机在外面
+            let hasActiveDrones = false;
+            if (ship.droneStates) {
+                for (const slotId in ship.droneStates) {
+                    if (ship.droneStates[slotId] === 'WORKING' || ship.droneStates[slotId] === 'RETURNING') {
+                        hasActiveDrones = true;
+                        if (ship.droneStates[slotId] === 'WORKING') {
+                            ship.droneStates[slotId] = 'RETURNING'; // 立即打上标记防抖
+                            import('../ShipManager.js').then(module => {
+                                module.ShipManager.recallDrone(ship.id, slotId);
+                            });
+                        }
+                    }
+                }
+            }
+            
+            if (hasActiveDrones) {
+                // 压入显式的无人机回收任务，带有超时机制
+                ship.taskStack.push({ action: 'RECALL_DRONES', timeout: 10000 });
+                // console.log(`[采矿调度] 矿船 ${ship.name} 容量达80%但有无人机在外，压入 RECALL_DRONES 任务`);
+                return;
+            }
+
             // 所有船都应该有停泊卸货行为
             ship.taskStack.push({ action: 'FIND_BASE_AND_TRADE' });
             // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 容量达80%，压入任务: FIND_BASE_AND_TRADE`);
@@ -42,23 +65,92 @@ export class ShipDecision {
         // 判断2：去挖矿。优先在当前星区找矿带
         if (worldState.asteroidBelts) {
             const localBelts = worldState.asteroidBelts.filter((b: any) => b.sector === ship.location.sector);
-            if (localBelts.length > 0) {
-                // 只要当前星区有矿带，直接压入 MINE_SECTOR 任务即可
-                // 底层物理 AI 会自动判断自己是否在矿区圆圈范围内
-                ship.taskStack.push({ action: 'MINE_SECTOR', targetSector: ship.location.sector });
-            } else {
-                // 如果当前星区没矿，寻找最近有矿带的星区并跳跃
-                // 为了简单，暂时随机找一个有矿的星系跳过去
-                const allBelts = worldState.asteroidBelts;
-                if (allBelts.length > 0) {
-                    const belt = allBelts[Math.floor(Math.random() * allBelts.length)];
-                    // console.log(`[采矿决策] 矿船 ${ship.name} (ID: ${ship.id}) 当前星区 ${ship.location.sector} 无矿带，决定跳跃至 ${belt.sector} 寻找矿区。`);
-                    ship.taskStack.push({ action: 'JUMP_TO_SECTOR', target: belt.sector });
-                    // console.log(`[采矿调试 - F12] 矿船 ${ship.name} (ID: ${ship.id}) 压入任务: JUMP_TO_SECTOR, 目标星区: ${belt.sector}`);
-                } else {
-                    // console.log(`[采矿决策] 矿船 ${ship.name} (ID: ${ship.id}) 在全宇宙都找不到矿带！`);
-                }
+            // 判断当前星区的所有矿带是否都已经超载
+            const isLocalOverloaded = localBelts.length > 0 && localBelts.every((b: any) => (b.miningRate || 0) >= 5000);
+            
+            // 排队机制：计算全局所有采矿船对各个星区的预期热力贡献
+            const sectorLoadMap = new Map();
+            // 先加入各星区现有的物理热力值（兜底，可能并不完全准确因为有排队机制，但为了兼容保留）
+            if (worldState.asteroidBelts) {
+                worldState.asteroidBelts.forEach((belt: any) => {
+                    const s = belt.sector;
+                    if (!sectorLoadMap.has(s)) sectorLoadMap.set(s, 0);
+                    // 现有的 miningRate 不再作为主要的排队依据，因为排队是通过舰船数量计算的
+                });
             }
+
+            // 遍历所有的舰船，计算正在采矿或正在前去采矿的舰船的预期热力
+            import('../ShipManager.js').then(module => {
+                const allShips = module.ShipManager.ships;
+                allShips.forEach((s: any) => {
+                    if (s.activeWeapons && s.activeWeapons.some((w:any) => w.compId === 'miner_beam_mk1')) {
+                        let targetSec = null;
+                        if (s.commandState === 'MINING') {
+                            targetSec = s.location.sector;
+                        } else if (s.taskStack && s.taskStack.length > 0) {
+                            // 正在前去采矿的路上
+                            const task = s.taskStack.find((t:any) => t.action === 'MINE_SECTOR');
+                            if (task) targetSec = task.targetSector;
+                        }
+                        
+                        if (targetSec) {
+                            let mYield = 100;
+                            let mFireRate = 3.0;
+                            const mWep = s.activeWeapons.find((w:any) => w.compId === 'miner_beam_mk1');
+                            if (mWep) {
+                                mYield = mWep.stats.miningYield || 100;
+                                mFireRate = mWep.stats.fireRate || 3.0;
+                            }
+                            const expectedRate = (mYield / mFireRate) * 6;
+                            sectorLoadMap.set(targetSec, (sectorLoadMap.get(targetSec) || 0) + expectedRate);
+                        }
+                    }
+                });
+
+                const currentSectorLoad = sectorLoadMap.get(ship.location.sector) || 0;
+                
+                // 为了计算“当前如果我加进去会不会超载”，我们需要预估我自己的热力
+                let myExpectedRate = 200; // 预估平均值
+                if (ship.activeWeapons) {
+                    const myWep = ship.activeWeapons.find((w:any) => w.compId === 'miner_beam_mk1');
+                    if (myWep) {
+                        myExpectedRate = ((myWep.stats.miningYield || 100) / (myWep.stats.fireRate || 3.0)) * 6;
+                    }
+                }
+
+                // 如果当前星区还没满（算上我自己），就直接在当前星区挖
+                if (localBelts.length > 0 && (currentSectorLoad + myExpectedRate < 5000)) {
+                    // console.log(`[DEBUG - 采矿调度] 矿船 ${ship.name} (容量不足80%) 决定在本地星区开采，压入 MINE_SECTOR`);
+                    ship.taskStack.push({ action: 'MINE_SECTOR', targetSector: ship.location.sector });
+                } else {
+                    // 如果当前星区没矿或加上我会超载，寻找负荷最低的有矿星区并跳跃，宁愿去别处也不要在当前星区硬卷
+                    let bestSector = null;
+                    let minLoad = Infinity;
+                    
+                    if (worldState.asteroidBelts && worldState.asteroidBelts.length > 0) {
+                        const uniqueSectorsWithBelts = [...new Set(worldState.asteroidBelts.map((b:any) => b.sector))];
+                        
+                        uniqueSectorsWithBelts.forEach((sec: any) => {
+                            const load = sectorLoadMap.get(sec) || 0;
+                            if (load < minLoad) {
+                                minLoad = load;
+                                bestSector = sec;
+                            }
+                        });
+
+                        // 找到了最不卷的地方，飞过去排队（即使那个地方也大于 5000，也是最不卷的）
+                        if (bestSector) {
+                            if (bestSector === ship.location.sector) {
+                                // console.log(`[DEBUG - 采矿调度] 矿船 ${ship.name} 决定在本地星区开采(即使可能卷)，压入 MINE_SECTOR`);
+                                ship.taskStack.push({ action: 'MINE_SECTOR', targetSector: ship.location.sector });
+                            } else {
+                                // console.log(`[DEBUG - 采矿调度] 矿船 ${ship.name} 决定跨区前往 ${bestSector} 开采，压入 JUMP_TO_SECTOR`);
+                                ship.taskStack.push({ action: 'JUMP_TO_SECTOR', target: bestSector });
+                            }
+                        }
+                    }
+                }
+            });
         }
     }
 
@@ -132,7 +224,86 @@ export class ShipExecution {
      * 执行单一原子任务
      */
     static executeAtomicTask(ship: any, task: any, dt: number, worldState: any) {
+        // --- 注入监听器：捕获是谁吃了任务 ---
+        if (ship.taskStack && !ship._taskStackProxied) {
+            const originalShift = ship.taskStack.shift.bind(ship.taskStack);
+            const originalUnshift = ship.taskStack.unshift.bind(ship.taskStack);
+            const originalPush = ship.taskStack.push.bind(ship.taskStack);
+            
+            ship.taskStack.shift = function() {
+                const item = originalShift();
+                // console.log(`[任务流转] 飞船 ${ship.name} (ID: ${ship.id}) 出栈了任务: ${item ? item.action : 'undefined'}. 剩余任务: [${this.map((t:any)=>t.action).join(', ')}]`);
+                return item;
+            };
+            ship.taskStack.unshift = function(...args: any[]) {
+                const res = originalUnshift(...args);
+                // console.log(`[任务流转] 飞船 ${ship.name} (ID: ${ship.id}) 头部压栈: ${args.map(a=>a.action).join(', ')}. 当前栈: [${this.map((t:any)=>t.action).join(', ')}]`);
+                return res;
+            };
+            ship.taskStack.push = function(...args: any[]) {
+                const res = originalPush(...args);
+                // console.log(`[任务流转] 飞船 ${ship.name} (ID: ${ship.id}) 尾部压栈: ${args.map(a=>a.action).join(', ')}. 当前栈: [${this.map((t:any)=>t.action).join(', ')}]`);
+                return res;
+            };
+            ship._taskStackProxied = true;
+            // console.log(`[任务流转] 飞船 ${ship.name} 拦截器已挂载，初始栈: [${ship.taskStack.map((t:any)=>t.action).join(', ')}]`);
+        }
+        
         switch (task.action) {
+            case 'RECALL_DRONES': {
+                if (ship.commandState !== 'RECALLING') {
+                    // console.log(`[任务流转] 飞船 ${ship.name} 发起无人机回收指令 (RECALL_DRONES)`);
+                    ship.commandState = 'RECALLING';
+                    
+                    if (ship.droneStates) {
+                        for (const slotId in ship.droneStates) {
+                            if (ship.droneStates[slotId] === 'WORKING') {
+                                ship.droneStates[slotId] = 'RETURNING';
+                                import('../ShipManager.js').then(module => {
+                                    module.ShipManager.recallDrone(ship.id, slotId);
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // 超时判断
+                if (task.timeout !== undefined) {
+                    task.timeout -= dt;
+                    if (task.timeout <= 0) {
+                        console.warn(`[任务流转-异常] 飞船 ${ship.name} 回收无人机超时(10s)，强行遗弃外部无人机并出栈！`);
+                        if (ship.droneStates) {
+                            for (const slotId in ship.droneStates) {
+                                if (ship.droneStates[slotId] === 'RETURNING') {
+                                    ship.droneStates[slotId] = 'IDLE'; // 强行重置状态
+                                }
+                            }
+                        }
+                        ship.commandState = null;
+                        ship.taskStack.shift();
+                        break;
+                    }
+                }
+
+                // 检查是否全部回收完毕
+                let hasActiveDrones = false;
+                if (ship.droneStates) {
+                    for (const slotId in ship.droneStates) {
+                        if (ship.droneStates[slotId] === 'WORKING' || ship.droneStates[slotId] === 'RETURNING') {
+                            hasActiveDrones = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasActiveDrones) {
+                    // console.log(`[任务流转] 飞船 ${ship.name} 所有无人机已回收完毕，出栈 RECALL_DRONES`);
+                    ship.commandState = null;
+                    ship.taskStack.shift();
+                }
+                break;
+            }
+
             case 'JUMP_TO_SECTOR':
                 if (ship.location.sector === task.target) {
                     ship.taskStack.shift(); // 已经到达，出栈执行下一步
@@ -212,8 +383,19 @@ export class ShipExecution {
                 }
                 break;
                 
-            case 'DOCK_AT_STATION':
+            case 'DOCK_AT_STATION': {
+                // 新增：如果它已经在目标港口停好了，直接出栈完成任务
+                // [修复] 这里放宽判断，只要是 DOCKED 状态，不管 UID 是不是完全匹配都算停泊成功。
+                // 因为目标建筑可能有多个模块组合，导致 dockedAt(模块UID) 不等于 targetBaseUid(主站UID)
+                if (ship.state === 'DOCKED') {
+                    // console.log(`[任务流转] 飞船 ${ship.name} 已确认物理停泊完成 (所在模块: ${ship.dockedAt})，DOCK_AT_STATION 自检通过准备出栈。`);
+                    ship.commandState = null;
+                    ship.taskStack.shift();
+                    break;
+                }
+
                 if (ship.commandState !== 'DOCK') {
+                    // console.log(`[任务流转] 飞船 ${ship.name} 发起停靠请求 DOCK_AT_STATION 目标: ${task.targetBaseUid}`);
                     ship.commandState = 'DOCK';
                     ship.commandTargetId = task.targetBaseUid; // 确保 OOS/物理层 能知道目标建筑的 UID
                     
@@ -224,10 +406,16 @@ export class ShipExecution {
                         }));
                     }
                 }
-                break;
+                break; // 必须有 break，防止穿透
+            }
 
             case 'UNDOCK_FROM_STATION':
+                // console.log(`[任务流转] 飞船 ${ship.name} 准备执行 UNDOCK_FROM_STATION. 当前 commandState: ${ship.commandState}, 物理状态: ${ship.state}`);
+                if (ship.commandState === 'UNDOCKING') break; // 防抖锁
+                ship.commandState = 'UNDOCKING';
+                
                 import('../ShipManager.js').then(module => {
+                    // console.log(`[任务流转] 飞船 ${ship.name} (ID: ${ship.id}) 异步执行 undockShip`);
                     module.ShipManager.undockShip(ship.id);
                     ship.commandState = null;
                     ship.taskStack.shift();
@@ -284,7 +472,7 @@ export class ShipExecution {
                                         amount: matchingOrder.payload.amount || 9999, // 尽量补足订单数量
                                         type: 'sell' 
                                     }];
-                                    console.log(`[订单撮合] 飞船 ${ship.name} 匹配到 ${matchingOrder.payload.cargoType} 的补给单，准备跨星区前往基地 ${stationUid} (位于 ${globalStation.sector})`);
+                                    // console.log(`[订单撮合] 飞船 ${ship.name} 匹配到 ${matchingOrder.payload.cargoType} 的补给单，准备跨星区前往基地 ${stationUid} (位于 ${globalStation.sector})`);
                                 }
                             }
                         }
@@ -314,7 +502,7 @@ export class ShipExecution {
                                                         amount: 9999, // 尽量全部倾销
                                                         type: 'sell'
                                                     }];
-                                                    console.log(`[智能配方兜底] 飞船 ${ship.name} 根据配方需求强行锁定了基地 ${base.uid} (内部工厂: ${internalModId} 需要 ${good})`);
+                                                    // console.log(`[智能配方兜底] 飞船 ${ship.name} 根据配方需求强行锁定了基地 ${base.uid} (内部工厂: ${internalModId} 需要 ${good})`);
                                                     matchFound = true;
                                                     break;
                                                 }
@@ -330,7 +518,7 @@ export class ShipExecution {
                         // 如果连能消耗货物的工厂都找不到，彻底退化为随便找个地方停靠 (极大概率货物会被拒收保留)
                         if (!targetBase) {
                             targetBase = localBases.length > 0 ? localBases[0] : myBases[0];
-                            console.log(`[智能配方兜底] 飞船 ${ship.name} 在星区内找不到任何消耗自身货物的工厂，退化为停靠在 ${targetBase?.uid}`);
+                            // console.log(`[智能配方兜底] 飞船 ${ship.name} 在星区内找不到任何消耗自身货物的工厂，退化为停靠在 ${targetBase?.uid}`);
                         }
                     }
                     
@@ -355,7 +543,7 @@ export class ShipExecution {
                     }
                     
                 } else {
-                    console.log(`[物流] 船只 ${ship.name} 找不到适合的交易点，原地丢弃货物。`);
+                    // console.log(`[物流] 船只 ${ship.name} 找不到适合的交易点，原地丢弃货物。`);
                     const InventoryManager = (window as any).InventoryManager;
                     if (InventoryManager) {
                         InventoryManager.clearInventory(ship.id);
@@ -366,6 +554,21 @@ export class ShipExecution {
             }
 
             case 'TRADE_CARGO': {
+                if (ship.commandState === 'TRADING') {
+                    // 还在交易中，保持挂起，不再重复投递异步任务
+                    break; 
+                }
+                
+                // 只有当它确实进港了才允许交易，如果在路上被误传了任务直接打断
+                if (ship.state !== 'DOCKED') {
+                    console.warn(`[任务流转-异常] 飞船 ${ship.name} 试图在未停靠状态下进行 TRADE_CARGO！当前状态: ${ship.state}。中断并丢弃任务。`);
+                    ship.taskStack.shift();
+                    break;
+                }
+
+                // console.log(`[任务流转] 飞船 ${ship.name} 启动贸易结算 (TRADE_CARGO) 异步流程，上防抖锁。`);
+                ship.commandState = 'TRADING';
+                
                 const targetBaseUid = task.targetBaseUid;
                 const tradeList = task.tradeList;
                 
@@ -373,6 +576,7 @@ export class ShipExecution {
                 const InventoryManager = (window as any).InventoryManager;
                 
                 if (!BuildingManager || !InventoryManager) {
+                    // console.log(`[DEBUG - 任务流转] 飞船 ${ship.name} TRADE_CARGO 失败：缺少 Manager，任务强制出栈。`);
                     ship.taskStack.shift();
                     break;
                 }
@@ -436,33 +640,31 @@ export class ShipExecution {
                         // 【兜底模式】：没有清单，默认把身上所有的货全卖了
                         /* [暂时注释掉兜底功能以配合测试]
                         const myInv = InventoryManager.getInventory(ship.id);
-                        for (const good in myInv) {
-                            if (myInv[good] > 0) {
-                                const amountToTransfer = myInv[good];
-                                const actualTransferred = InventoryManager.transfer(ship.id, targetStationUid, good, amountToTransfer);
-                                
-                                if (actualTransferred > 0) {
-                                    if (NPCManager && ship.ownerId && stationOwnerId && String(ship.ownerId) !== String(stationOwnerId)) {
-                                        let itemDef = ItemData.ITEMS ? ItemData.ITEMS[good] : null;
-                                        let price = itemDef ? (itemDef.basePrice || 10) : 10;
-                                        let totalValue = price * actualTransferred;
-                                        
-                                        NPCManager.getInstance().transferCredits(stationOwnerId, ship.ownerId, totalValue, true);
-                                    }
-                                    transferred = true;
-                                }
-                            }
-                        }
+                        ...
                         */
                     }
                     
+                    // console.log(`[任务流转] 飞船 ${ship.name} TRADE_CARGO 交易完成，准备解锁并出栈。当前 taskStack: [${ship.taskStack.map((t:any)=>t.action).join(', ')}]`);
+                    ship.commandState = null; // 解锁
                     ship.taskStack.shift();
+
+                    // 【出港兜底机制】
+                    // 如果船还在港内，且任务栈空了，或者下一个任务不是出港，强行加一个出港指令，防旧存档卡死！
+                    if (ship.state === 'DOCKED') {
+                        if (ship.taskStack.length === 0 || ship.taskStack[0].action !== 'UNDOCK_FROM_STATION') {
+                            console.warn(`[任务流转-兜底] 飞船 ${ship.name} 交易完成但无后续离港指令，强行压入 UNDOCK_FROM_STATION！`);
+                            ship.taskStack.unshift({ action: 'UNDOCK_FROM_STATION' });
+                        }
+                    }
                 });
                 break;
             }
 
             case 'MINE_SECTOR': {
-                // console.log(`[DEBUG - MINE_SECTOR 执行] 飞船 ${ship.name} (ID: ${ship.id}) 进入采矿作业节点，当前星区: ${ship.location.sector}`);
+                // --- 节流的执行层日志 ---
+                if (!ship._mineSectorDebugTimer || Date.now() - ship._mineSectorDebugTimer > 5000) {
+                    ship._mineSectorDebugTimer = Date.now();
+                }
 
                 // 1. 空矿检测
                 const hasAsteroids = worldState.asteroidBelts && worldState.asteroidBelts.some((b: any) => b.sector === ship.location.sector);
@@ -479,13 +681,44 @@ export class ShipExecution {
                     const capacity = InventoryManager.getCapacity(ship.id);
                     
                     if (capacity > 0 && (currentCargo / capacity) >= 0.8) {
-                        // console.log(`[采矿] ${ship.name} 货舱容量已达80% (${currentCargo}/${capacity})，结束采矿任务。`);
-                        ship.taskStack.shift();
-                        ship.commandState = null;
-                        
-                        // 如果有绑定的采矿订单，标记为完成 (交由后续逻辑如归仓结算处理)
-                        if (ship.orderQueue && ship.orderQueue[0] && ship.orderQueue[0].type === 'MINE') {
-                            ship.orderQueue.shift();
+                        // 检查是否有无人机在外面
+                        let hasActiveDrones = false;
+                        if (ship.droneStates) {
+                            for (const slotId in ship.droneStates) {
+                                if (ship.droneStates[slotId] === 'WORKING' || ship.droneStates[slotId] === 'RETURNING') {
+                                    hasActiveDrones = true;
+                                    if (ship.droneStates[slotId] === 'WORKING') {
+                                        ship.droneStates[slotId] = 'RETURNING'; // 立即打上标记防抖
+                                        import('../ShipManager.js').then(module => {
+                                            module.ShipManager.recallDrone(ship.id, slotId);
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        if (hasActiveDrones) {
+                            // 压入显式的回收任务并中断采矿
+                            // console.log(`[采矿] ${ship.name} 货舱容量已达80%，压入 RECALL_DRONES，准备中断采矿`);
+                            ship.taskStack.shift();
+                            ship.taskStack.unshift({ action: 'RECALL_DRONES', timeout: 10000 });
+                            ship.commandState = null;
+                            break;
+                        }
+
+                        // 如果是非玩家飞船 (如NPC矿船) 或者是在执行系统宏观订单，则自动弹栈去卸货
+                        if (ship.ownerId !== 'player') {
+                            // console.log(`[采矿] ${ship.name} 货舱容量已达80% (${currentCargo}/${capacity})，结束采矿任务。`);
+                            ship.taskStack.shift();
+                            ship.commandState = null;
+                            
+                            // 如果有绑定的采矿订单，标记为完成 (交由后续逻辑如归仓结算处理)
+                            if (ship.orderQueue && ship.orderQueue[0] && ship.orderQueue[0].type === 'MINE') {
+                                ship.orderQueue.shift();
+                            }
+                        } else {
+                            // 玩家指派的手动采矿：即使满了也不结束任务，保持挂起，等待玩家下一步指令
+                            ship.commandState = 'MINING';
                         }
                         break;
                     }
@@ -516,7 +749,7 @@ export class ShipExecution {
                 if (pathNodes && pathNodes.length > 1) {
                     ship.path = pathNodes.map((n: any) => n.name).slice(1);
                 } else {
-                    console.log(`[导航错误] ${ship.name} 无法找到前往 ${targetSectorName} 的航线，放弃当前任务。`);
+                    // console.log(`[导航错误] ${ship.name} 无法找到前往 ${targetSectorName} 的航线，放弃当前任务。`);
                     ship.orderQueue.shift(); // 寻路失败，剔除不可达的废任务
                     ship.path = [];
                 }
@@ -537,7 +770,7 @@ export class ShipExecution {
                 sector.inventory[order.good] -= amountToFetch;
                 ship.addCargo(order.good, amountToFetch);
                 order.actualAmount = amountToFetch; 
-                console.log(`[商船] ${ship.name} 在 ${sector.name} 提货 ${amountToFetch} ${order.good}`);
+                // console.log(`[商船] ${ship.name} 在 ${sector.name} 提货 ${amountToFetch} ${order.good}`);
             } else {
                 order.actualAmount = 0;
             }
@@ -546,7 +779,7 @@ export class ShipExecution {
             const deliveredAmount = ship.removeCargo(order.good, order.actualAmount || 0);
             if (!sector.inventory) sector.inventory = {};
             sector.inventory[order.good] = Math.min(300, (sector.inventory[order.good] || 0) + deliveredAmount);
-            console.log(`[商船] ${ship.name} 在 ${sector.name} 卸货 ${deliveredAmount} ${order.good}`);
+            // console.log(`[商船] ${ship.name} 在 ${sector.name} 卸货 ${deliveredAmount} ${order.good}`);
         }
     }
 }
