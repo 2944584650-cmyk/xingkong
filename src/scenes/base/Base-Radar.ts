@@ -10,7 +10,7 @@ import { processAILogic } from './Base-AI.js';
 import { checkDockingGuidance } from './Base-Docking.js';
 import { GameConfig } from '../../config.js';
 import { AffinityManager } from '../../managers/AffinityManager.js';
-import { processBuildingBeamHit } from './Base-Building.js';
+import { processBuildingBeamHit } from '../../managers/building/BuildingProcessor.js';
 
 export function updateSystemRadar(scene: any, time: number, delta: number) {
     scene.systemMapOrbitTime += delta * 0.000015; 
@@ -70,11 +70,9 @@ export function updateSystemRadar(scene: any, time: number, delta: number) {
         initAsteroidsForSector(simSectorName, worldState, scene.sectorSimulations);
 
         // [新增修复] 将保存在 WorldState 里的空间站数据灌入当前的 BuildingManager
-        // 关键点：BuildingManager.stationModules 是全局单例，如果我们当前在计算一个后台星区（isRendering = false）
-        // 那我们绝不能把后台星区的空间站塞进内存！只应该在渲染主星区时进行赋值！
-        if (isRendering) {
-            BuildingManager.loadFromWorldState(worldState, simSectorName);
-        }
+        // 关键点：BuildingManager.stationModules 是全局单例，由于已经重构为 Hash 表支持全宇宙推演
+        // 这里不应该每帧执行全量的数据加载与拷贝！
+        // 移除 isRendering 时每帧的 BuildingManager.loadFromWorldState(worldState);，改由存档加载或模块变更事件触发。
 
         // [重构：完全同步、绝对无状态污染的星门计算]
         // 动态计算当前活跃星区的所有星门物理位置
@@ -912,36 +910,55 @@ export function updateSystemRadar(scene: any, time: number, delta: number) {
                         if (isPlayerControlled) {
                             // 玩家炮塔：自律索敌
                             let closest = null;
-                            let minDist = wep.stats.range || 250;
                             if (wep.turretRule === 'auto' || !wep.turretRule || wep.turretRule === 'defense' || wep.turretRule === 'manual') {
-                                allShipsList.forEach(t => {
-                                    if (t.id === ent.id) return;
-                                    let valid = false;
-                                    
-                                    // 建造光束，只能锁定己方存活或正在建造的虚影
-                                    if (wep.subType === 'builder') {
-                                        if ((t.hp > 0 || (t.shipRef && t.shipRef.isBuilding)) && getAffinity(ent, t) >= 0) {
-                                            if (t.shipRef && t.shipRef.isBuilding) valid = true; // 优先修虚影
-                                        }
-                                    } else {
-                                        // 普通武器：必须是活的，且是敌人
-                                        if (t.hp <= 0) return;
-                                        
-                                        const affToThem = getAffinity(ent, t);
-                                        const affToMe = getAffinity(t, ent);
-                                        
-                                        if (affToThem < 0 || affToMe < 0) {
-                                            if (wep.turretRule === 'manual') valid = true; // 手动模式：辅助瞄准最近敌人
-                                            else if (wep.turretRule === 'auto' || !wep.turretRule) valid = true; // 自动模式：攻击任何敌人
-                                            else if (wep.turretRule === 'defense' && affToMe <= -100) valid = true; // 防御模式：只打死敌
-                                        }
+                                // [PERF] 加入索敌缓存，每 0.5 秒或目标失效时才重新索敌
+                                if (wep._cachedTarget && (wep._cachedTarget.hp > 0 || (wep._cachedTarget.shipRef && wep._cachedTarget.shipRef.isBuilding))) {
+                                    const d = Math.hypot(wep._cachedTarget.x - ent.x, wep._cachedTarget.y - ent.y);
+                                    if (d > (wep.stats.range || 250)) {
+                                        wep._cachedTarget = null;
                                     }
-                                    
-                                    if (valid) {
-                                        const d = Math.hypot(t.x - ent.x, t.y - ent.y);
-                                        if (d < minDist) { minDist = d; closest = t; }
-                                    }
-                                });
+                                } else {
+                                    wep._cachedTarget = null;
+                                }
+                                
+                                if (wep._targetUpdateTimer === undefined) wep._targetUpdateTimer = 0;
+                                wep._targetUpdateTimer -= dt;
+                                
+                                if (wep._targetUpdateTimer <= 0 || !wep._cachedTarget) {
+                                    wep._targetUpdateTimer = 0.5 + Math.random() * 0.2; // 错开每一帧的计算高峰
+                                    let minDist = wep.stats.range || 250;
+                                    let newTarget = null;
+                                    allShipsList.forEach(t => {
+                                        if (t.id === ent.id) return;
+                                        let valid = false;
+                                        
+                                        // 建造光束，只能锁定己方存活或正在建造的虚影
+                                        if (wep.subType === 'builder') {
+                                            if ((t.hp > 0 || (t.shipRef && t.shipRef.isBuilding)) && getAffinity(ent, t) >= 0) {
+                                                if (t.shipRef && t.shipRef.isBuilding) valid = true; // 优先修虚影
+                                            }
+                                        } else {
+                                            // 普通武器：必须是活的，且是敌人
+                                            if (t.hp <= 0) return;
+                                            
+                                            const affToThem = getAffinity(ent, t);
+                                            const affToMe = getAffinity(t, ent);
+                                            
+                                            if (affToThem < 0 || affToMe < 0) {
+                                                if (wep.turretRule === 'manual') valid = true; // 手动模式：辅助瞄准最近敌人
+                                                else if (wep.turretRule === 'auto' || !wep.turretRule) valid = true; // 自动模式：攻击任何敌人
+                                                else if (wep.turretRule === 'defense' && affToMe <= -100) valid = true; // 防御模式：只打死敌
+                                            }
+                                        }
+                                        
+                                        if (valid) {
+                                            const d = Math.hypot(t.x - ent.x, t.y - ent.y);
+                                            if (d < minDist) { minDist = d; newTarget = t; }
+                                        }
+                                    });
+                                    wep._cachedTarget = newTarget;
+                                }
+                                closest = wep._cachedTarget;
                             }
                             if (closest) {
                                 wepTarget = closest;
@@ -1033,6 +1050,7 @@ export function updateSystemRadar(scene: any, time: number, delta: number) {
                         if (isLaser || isBuilder) {
                             // 激光如果没有锁定特定目标(如玩家主炮盲射)，需要发射射线检测寻找目标
                             if (!wepTarget && !wep.isTurret) {
+                                // [PERF] 激光射线盲射检测，因为只有开火时才检测，频率较低，但也可以引入简易节流
                                 let minDist = wep.stats.range || 250;
                                 allShipsList.forEach(t => {
                                     if (t.id === ent.id || t.hp <= 0) return;
@@ -1187,7 +1205,7 @@ export function updateSystemRadar(scene: any, time: number, delta: number) {
                 // 下水实体化
                 if (ent.shipRef.buildProgress >= 100 && !ent.shipRef.isSpawning) {
                     ent.shipRef.isSpawning = true;
-                    import('./Base-Building.js').then(module => {
+                    import('../../managers/building/BuildingProcessor.js').then(module => {
                         module.finishShipBuilding(ent.id, ent.shipRef, ent.x, ent.y, ent.rotation);
                     });
                 }

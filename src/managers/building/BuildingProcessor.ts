@@ -1,9 +1,14 @@
-import { ShipManager } from '../../managers/ShipManager.js';
-import { BuildingManager } from '../../managers/BuildingManager.js';
-import { PlayerManager } from '../../managers/PlayerManager.js';
+import { ShipManager } from '../ShipManager.js';
+import { BuildingManager } from '../BuildingManager.js';
+import { PlayerManager } from '../PlayerManager.js';
 import { EventBus, GameEvents } from '../../utils/EventBus.js';
-import { InventoryManager } from '../../managers/InventoryManager.js';
 import { GameConfig } from '../../config.js';
+
+/**
+ * 【建筑推演处理器】
+ * 原 Base-Building.ts 迁移至此
+ * 负责建筑队列的宏观推演、新实体造船、光束建造等全局数据处理逻辑。
+ */
 
 /**
  * 接收船坞等终端的飞船建造下达事件
@@ -14,7 +19,7 @@ export function handleStartShipBuild(e: any) {
     
     // 【硬核阻断】：建造请求必须携带明确的星区信息，绝不再去尝试猜测玩家所在位置！
     if (!buildData.location || !buildData.location.sector) {
-        console.error("[Base-Building] 建造请求被驳回：缺少明确的星区位置信息！这是非法/损坏的建筑模块发出的请求。", buildData);
+        console.error("[BuildingProcessor] 建造请求被驳回：缺少明确的星区位置信息！这是非法/损坏的建筑模块发出的请求。", buildData);
         return;
     }
     
@@ -129,39 +134,11 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
                         if (!order.location) {
                             let spawnX = 500, spawnY = 275;
                             let finalSpawnRot = 0;
-                            if (BuildingManager.stationModules) {
-                                const memMod = BuildingManager.stationModules.find((m: any) => m.uid === mod.uid);
-                                if (memMod) {
-                                    const transform = BuildingManager.calculateSpawnTransform(memMod);
-                                    spawnX = transform.x;
-                                    spawnY = transform.y;
-                                    finalSpawnRot = transform.rotation;
-                                } else {
-                                    const baseGridX = Math.floor((station.worldX || 0) / 550);
-                                    const baseGridY = Math.floor((station.worldY || 0) / 550);
-                                    const absoluteDockData = {
-                                        ...mod,
-                                        gridX: baseGridX + (mod.gridX || 0),
-                                        gridY: baseGridY + (mod.gridY || 0)
-                                    };
-                                    const transform = BuildingManager.calculateSpawnTransform(absoluteDockData);
-                                    spawnX = transform.x;
-                                    spawnY = transform.y;
-                                    finalSpawnRot = transform.rotation;
-                                }
-                            } else {
-                                const baseGridX = Math.floor((station.worldX || 0) / 550);
-                                const baseGridY = Math.floor((station.worldY || 0) / 550);
-                                const absoluteDockData = {
-                                    ...mod,
-                                    gridX: baseGridX + (mod.gridX || 0),
-                                    gridY: baseGridY + (mod.gridY || 0)
-                                };
-                                const transform = BuildingManager.calculateSpawnTransform(absoluteDockData);
-                                spawnX = transform.x;
-                                spawnY = transform.y;
-                                finalSpawnRot = transform.rotation;
-                            }
+                            // 直接传 station 给 calculateSpawnTransform，它内部会用 parentStation.worldX/Y 作为绝对基准点
+                            const transform = BuildingManager.calculateSpawnTransform(mod, station);
+                            spawnX = transform.x;
+                            spawnY = transform.y;
+                            finalSpawnRot = transform.rotation;
                             order.location = { sector: station.sector, x: spawnX, y: spawnY };
                             order.rotation = finalSpawnRot;
                         } else {
@@ -221,41 +198,11 @@ export function processMacroBuildingQueue(ws: any, currentSectorName: string): b
 
                         // console.log(`[全宇宙队列系统] 星区 [${station.sector}] 船坞 ${mod.uid} 闲置，接取宏观订单池订单并开始建造:`, order);
                         
-                        let spawnX = 500, spawnY = 275;
-                        let finalSpawnRot = 0;
-                        if (BuildingManager.stationModules) {
-                            const memMod = BuildingManager.stationModules.find((m: any) => m.uid === mod.uid);
-                            if (memMod) {
-                                const transform = BuildingManager.calculateSpawnTransform(memMod);
-                                spawnX = transform.x;
-                                spawnY = transform.y;
-                                finalSpawnRot = transform.rotation;
-                            } else {
-                                const baseGridX = Math.floor((station.worldX || 0) / 550);
-                                const baseGridY = Math.floor((station.worldY || 0) / 550);
-                                const absoluteDockData = {
-                                    ...mod,
-                                    gridX: baseGridX + (mod.gridX || 0),
-                                    gridY: baseGridY + (mod.gridY || 0)
-                                };
-                                const transform = BuildingManager.calculateSpawnTransform(absoluteDockData);
-                                spawnX = transform.x;
-                                spawnY = transform.y;
-                                finalSpawnRot = transform.rotation;
-                            }
-                        } else {
-                            const baseGridX = Math.floor((station.worldX || 0) / 550);
-                            const baseGridY = Math.floor((station.worldY || 0) / 550);
-                            const absoluteDockData = {
-                                ...mod,
-                                gridX: baseGridX + (mod.gridX || 0),
-                                gridY: baseGridY + (mod.gridY || 0)
-                            };
-                            const transform = BuildingManager.calculateSpawnTransform(absoluteDockData);
-                            spawnX = transform.x;
-                            spawnY = transform.y;
-                            finalSpawnRot = transform.rotation;
-                        }
+                        // 直接传 station 给 calculateSpawnTransform，它内部会用 parentStation.worldX/Y 作为绝对基准点
+                        const transform = BuildingManager.calculateSpawnTransform(mod, station);
+                        let spawnX = transform.x;
+                        let spawnY = transform.y;
+                        let finalSpawnRot = transform.rotation;
                         
                         order.location = { sector: station.sector, x: spawnX, y: spawnY };
                         order.rotation = finalSpawnRot;

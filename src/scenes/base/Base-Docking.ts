@@ -140,6 +140,7 @@ export function processMacroDockingQueue(currentSectorName: string) {
 
 import { BuildingManager, GRID_PIXEL_SIZE } from '../../managers/BuildingManager.js';
 import { GameConfig } from '../../config.js';
+import { UniverseEngine } from '../../managers/engine/UniverseEngine.js';
 
 // 旧版记录表保留用于向下兼容某些 UI
 export const berthRegistry: Record<string, { moduleId: string, berthId: string, status: string }> = {};
@@ -264,15 +265,50 @@ export function handleApplyDocking(e: any) {
     }
     
     // 重新修正 moduleId 以匹配实际带泊位的建筑模块 UID (兼容 'station' fallback)
-    let actualMod = BuildingManager.getAllModules().find(m => m.uid === moduleId);
-    if (!actualMod || !((GameConfig as any).MODULES[actualMod.moduleId]?.berths?.length > 0)) {
-        actualMod = BuildingManager.getAllModules().find(m => {
-            const data = (GameConfig as any).MODULES[m.moduleId];
-            return data && data.berths && data.berths.length > 0;
-        });
+    // 【核心修复】如果飞船发来了泛泛的 'station' 请求，我们需要在它所在的星区找泊位，而不是在玩家正看着的星区找！
+    const shipSector = ship.location?.sector || '未知星区';
+    
+    // 如果指名道姓要某个具体的 uid，我们就先假设这是对的
+    let actualModUid = moduleId !== 'station' ? moduleId : null;
+
+    if (!actualModUid || !((UniverseEngine as any).spatialRegistry?.get(actualModUid)?.berths)) {
+        // 如果它没指名道姓，或者指名的那个模块在注册表里没找到泊位，我们就必须后台遍历世界找一个给它
+        let worldState = null;
+        try {
+            const wbSaved = localStorage.getItem('world_state');
+            if (wbSaved) worldState = JSON.parse(wbSaved);
+        } catch(e) {}
+        
+        let foundFallback = false;
+        if (worldState && worldState.stations) {
+            for (const st of worldState.stations) {
+                // 必须在飞船同一个星区找
+                if (st.sector !== shipSector) continue;
+                
+                for (const mod of st.modules) {
+                    const modData = (GameConfig as any).MODULES[mod.moduleId];
+                    if (modData && modData.berths && modData.berths.length > 0) {
+                        actualModUid = mod.uid;
+                        foundFallback = true;
+                        break;
+                    }
+                }
+                if (foundFallback) break;
+            }
+        }
+        
+        // 如果实在找不到，只能回退看当前场景里有没有（这其实就是以前引发 bug 的旧逻辑，权当保底）
+        if (!actualModUid) {
+            const localFallback = BuildingManager.getAllModules().find(m => {
+                const data = (GameConfig as any).MODULES[m.moduleId];
+                return data && data.berths && data.berths.length > 0;
+            });
+            if (localFallback) actualModUid = localFallback.uid;
+        }
     }
-    if (actualMod) {
-        moduleId = actualMod.uid;
+
+    if (actualModUid) {
+        moduleId = actualModUid;
     }
 
     // 检查是否有空闲泊位
@@ -288,86 +324,108 @@ export function handleApplyDocking(e: any) {
     // 假设符合条件，打印日志
     EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff;">[港务局] 收到舰船 [${ship.name || ship.id}] 的停靠申请，已分配泊位 [${freeBerthId}]。引导协议启动。</div>` }));
     
-    // --- 计算泊位在世界坐标系中的绝对位置和角度 ---
-    let berthWorldX = 0;
-    let berthWorldY = 0;
-    let entryAngle = 0;
     let hullId = ship.hullId || ship.type || 'fighter';
+    const currentSector = (ship.location && ship.location.sector) ? ship.location.sector : (localStorage.getItem('current_sector') || '翡翠生态穹顶');
 
-    const mod = BuildingManager.getAllModules().find(m => m.uid === moduleId);
-    if (mod) {
-        const modData = (GameConfig as any).MODULES[mod.moduleId];
-        if (modData && modData.berths) {
-            const berth = modData.berths.find((b: any) => b.id === freeBerthId);
-            if (berth) {
-                // 网格转世界坐标
-                const worldPos = BuildingManager.gridToWorld(mod.gridX, mod.gridY);
-                // 使用真正的 GRID_PIXEL_SIZE 进行换算
-                const w = mod.width * GRID_PIXEL_SIZE;
-                const h = mod.height * GRID_PIXEL_SIZE;
-                let drawX = worldPos.x + w / 2;
-                let drawY = worldPos.y + h / 2;
-                let scale = 1; // 记录缩放比例
+    // --- 将绝对坐标计算交由底层 OOS 引擎 / 数据流负责，我们只需要触发一个申请事件，引擎自然会给船赋值 ---
+    // （虽然在这里算也行，但我们现在把它直接写入 ship 的指导数据中，不再依赖 RadarScene）
+    // 为了平滑过渡，我们暂时把之前的计算方法提炼后直接赋值给船，或者通知 ShipDecision
+    
+    // ... 但是由于这里本来就是 Base-Docking 的全局处理函数，
+    // 我们在此处算出来的结果，应该直接写进 ShipManager 中的 ship.dockingGuidanceTarget 属性，
+    // 而不再仅仅只传给前端去画 UI 虚影！
+    
+    // --- 【重构更新】抛弃本地冗长的坐标计算逻辑，全面改用 Universal API (空间注册表) ---
+    const transform = UniverseEngine.getDockingTransform(moduleId, freeBerthId);
 
-                const rotation = mod.rotation || 0;
+    if (!transform) {
+        EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:red;">[系统] 无法解析目标泊位的物理坐标，注册表中不存在。</div>` }));
+        // 回退清理状态
+        delete (ship as any).dockedBerthId;
+        if (berthRegistry[ship.id]) delete berthRegistry[ship.id];
+        return;
+    }
 
-                // --- 同步 RadarScene 中的对齐逻辑 ---
-                if (modData.connectRule) {
-                    const isRotated = rotation % 180 !== 0;
-                    // 读取模块贴图定义的宽高
-                    const spriteOrigW = modData.spriteSize ? modData.spriteSize.width : w;
-                    const spriteOrigH = modData.spriteSize ? modData.spriteSize.height : h;
-                    
-                    const visualOrigW = isRotated ? spriteOrigH : spriteOrigW;
-                    const visualOrigH = isRotated ? spriteOrigW : spriteOrigH;
+    const berthWorldX = transform.worldX;
+    const berthWorldY = transform.worldY;
+    const entryAngle = transform.entryAngle;
+    const sourceOfCoordinates = `宇宙引擎空间注册表 (UniverseEngine)`;
 
-                    scale = Math.min(w / visualOrigW, h / visualOrigH);
-                    const actualW = visualOrigW * scale;
-                    const actualH = visualOrigH * scale;
+    // 核心修改点：将引导目标绝对坐标强行写入宏观飞船实体
+    // 这样即便玩家不在场 (OOS)，ShipDecision也能在后台读到坐标并引导其飞过去
+    (ship as any).dockingGuidanceTarget = {
+        targetId: moduleId,
+        berthId: freeBerthId,
+        worldX: berthWorldX,
+        worldY: berthWorldY,
+        entryAngle: entryAngle,
+        timestamp: Date.now() // 记录分配时间，超时后可主动清除
+    };
 
-                    let effectiveRule = { ...modData.connectRule };
-                    if (rotation === 90) {
-                        effectiveRule = { up: modData.connectRule.left, right: modData.connectRule.up, down: modData.connectRule.right, left: modData.connectRule.down };
-                    } else if (rotation === 180) {
-                        effectiveRule = { up: modData.connectRule.down, right: modData.connectRule.left, down: modData.connectRule.up, left: modData.connectRule.right };
-                    } else if (rotation === 270) {
-                        effectiveRule = { up: modData.connectRule.right, right: modData.connectRule.down, down: modData.connectRule.left, left: modData.connectRule.up };
-                    }
-
-                    if (effectiveRule.left === "port") {
-                        drawX = worldPos.x + actualW / 2;
-                    } else if (effectiveRule.right === "port") {
-                        drawX = worldPos.x + w - actualW / 2;
-                    }
-                    
-                    if (effectiveRule.up === "port") {
-                        drawY = worldPos.y + actualH / 2;
-                    } else if (effectiveRule.down === "port") {
-                        drawY = worldPos.y + h - actualH / 2;
-                    }
-                }
-
-                const rad = rotation * Math.PI / 180;
-                // 将相对原图的 offset 乘以缩放比例 scale，映射到网格实际尺寸上
-                const ox = berth.offset.x * scale;
-                const oy = berth.offset.y * scale;
-
-                // 旋转偏移量
-                const rotatedOffsetX = ox * Math.cos(rad) - oy * Math.sin(rad);
-                const rotatedOffsetY = ox * Math.sin(rad) + oy * Math.cos(rad);
-
-                berthWorldX = drawX + rotatedOffsetX;
-                berthWorldY = drawY + rotatedOffsetY;
-                
-                // 计算进入角度 (停泊虚影的朝向)，模块自身的旋转也会影响进场角度
-                entryAngle = (berth.entryAngle + rotation) % 360;
+    // --- 调试信息优化：对比模块自身的坐标与注册表中的坐标 ---
+    // 获取注册表内的记录用于对比
+    const registryEntry = (UniverseEngine as any).spatialRegistry?.get(moduleId);
+    
+    // 尝试找出模块原本的记录
+    let actualModSector = '未知';
+    let actualModWorldX = 0;
+    let actualModWorldY = 0;
+    
+    let worldState = null;
+    try {
+        const wbSaved = localStorage.getItem('world_state');
+        if (wbSaved) worldState = JSON.parse(wbSaved);
+    } catch(e) {}
+    
+    if (worldState && worldState.stations) {
+        for (const st of worldState.stations) {
+            const found = st.modules.find((m: any) => m.uid === moduleId);
+            if (found) {
+                actualModSector = st.sector;
+                const baseGridX = Math.floor((st.worldX || 0) / GRID_PIXEL_SIZE);
+                const baseGridY = Math.floor((st.worldY || 0) / GRID_PIXEL_SIZE);
+                const parentStationX = baseGridX * GRID_PIXEL_SIZE;
+                const parentStationY = baseGridY * GRID_PIXEL_SIZE;
+                actualModWorldX = parentStationX + found.gridX * GRID_PIXEL_SIZE;
+                actualModWorldY = parentStationY + found.gridY * GRID_PIXEL_SIZE;
+                break;
             }
         }
     }
 
-    // 调度自动驾驶目标 (传递 berthId 给自动驾驶AI，后续AI可以根据berth的坐标进行精确导航)
-    // 将计算好的世界坐标与朝向也一并派发给 RadarScene 做特效渲染
-    const currentSector = (ship.location && ship.location.sector) ? ship.location.sector : (localStorage.getItem('current_sector') || '翡翠生态穹顶');
+    console.warn(`[Base-Docking] 飞船 [${ship.name || ship.id}] (所在星区: ${shipSector}) 正在停泊 -> 目标模块: ${moduleId}`);
+    
+    if (registryEntry) {
+        console.warn(`  ↳ 【对比1】注册表中该模块信息 -> 星区: ${registryEntry.sector} | 中心坐标 X: ${registryEntry.worldX.toFixed(2)}, Y: ${registryEntry.worldY.toFixed(2)}`);
+    } else {
+        console.warn(`  ↳ 【对比1】注册表中该模块信息 -> 🚨 缺失!`);
+    }
+    
+    console.warn(`  ↳ 【对比2】模块真实设定信息   -> 星区: ${actualModSector} | 网格推算 X: ${actualModWorldX.toFixed(2)}, Y: ${actualModWorldY.toFixed(2)}`);
+    
+    console.warn(`  ↳ 【对比3】飞船(货船)认为自己应该停泊的坐标 -> X: ${berthWorldX.toFixed(2)}, Y: ${berthWorldY.toFixed(2)} (泊位: ${freeBerthId})`);
+    
+    // 对比4：如果此时在全局有这个建筑节点，看看这个建筑的泊位实际上在哪（用于彻底揭露“找错建筑”的问题）
+    // 注意：getAllModules 默认返回全部模块（如果不传参数的话），所以这里要找对应 moduleId 应该是能找到的。
+    let localMod = BuildingManager.getAllModules().find(m => m.uid === moduleId);
+    if (localMod) {
+        let modData = (GameConfig as any).MODULES[localMod.moduleId];
+        if (modData && modData.berths) {
+            let b = modData.berths.find((bb:any) => bb.id === freeBerthId);
+            if (b) {
+                // 本地数据存储的是网格坐标 (gridX, gridY)，由于此处无法直接获取 parentStationX/Y，我们用已知的 actualModWorldX 替代
+                const localWorldX = actualModWorldX;
+                const localWorldY = actualModWorldY;
+                
+                console.warn(`  ↳ 【对比4】本地渲染节点/理论推算所指引的该泊位坐标 -> X: ${(localWorldX + b.offset.x).toFixed(2)}, Y: ${(localWorldY + b.offset.y).toFixed(2)}`);
+            } else {
+                console.warn(`  ↳ 【对比4】本地渲染节点有这个建筑，但没找到对应泊位 ID`);
+            }
+        }
+    } else {
+        console.warn(`  ↳ 【对比4】全宇宙内存缓存中，找不到该模块的数据 (可能未初始化或跨星区加载失败)`);
+    }
+    // 保留事件派发：让 RadarScene 在玩家在场时能捕捉并画出绿色指引线
     document.dispatchEvent(new CustomEvent('ui_select_docking_target', { 
         detail: { 
             targetId: moduleId, 

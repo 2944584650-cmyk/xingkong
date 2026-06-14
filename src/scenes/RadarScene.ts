@@ -1,6 +1,7 @@
 import { GameConfig } from '../config.js';
 import { ShipSprite } from '../entities/ShipSprite.js';
 import { BuildingManager, GRID_PIXEL_SIZE } from '../managers/BuildingManager.js';
+import { UniverseEngine } from '../managers/engine/UniverseEngine.js';
 
 export class RadarScene extends (window as any).Phaser.Scene {
     shipSprites: Map<string, ShipSprite>;
@@ -378,6 +379,7 @@ export class RadarScene extends (window as any).Phaser.Scene {
     }
 
     update(time: number, delta: number) {
+        const startTime = performance.now();
         const dt = delta / 1000;
 
         // Update Nodes and Gates
@@ -543,13 +545,23 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         // 渲染建筑模块与网格
         this.stationGraphics.clear();
-        const modules = BuildingManager.getAllModules();
+        const baseScene = this.scene.manager.getScene('Base') as any;
+        const currentViewSector = (baseScene && baseScene.viewingSector) ? baseScene.viewingSector : localStorage.getItem('current_sector');
         
+        // 【核心修复】只获取当前正在观察的星区的模块
+        let modules = BuildingManager.getAllModules(currentViewSector);
+        
+        // 【性能修复】修复由于不同星区模块 ID 冲突导致的疯狂创建/销毁循环
+        // 如果模块没有独立 ID，我们必须把 sector 加上作为复合主键，否则 A 星区的 (0,0) 和 B 星区的 (0,0) 会互相销毁对方
+        const getModuleUniqueId = (m: any) => {
+            if (m.id) return m.id;
+            if (m.instanceId) return m.instanceId;
+            const sector = m.sector || currentViewSector || 'unknown';
+            return `${sector}_${m.gridX}_${m.gridY}`;
+        };
+
         // 清理不再存在的模块贴图
-        const currentModIds = new Set(modules.map(m => {
-            const mAny = m as any;
-            return mAny.id || mAny.instanceId || `${m.gridX}_${m.gridY}`;
-        }));
+        const currentModIds = new Set(modules.map(m => getModuleUniqueId(m)));
         
         for (const [id, item] of this.moduleSprites.entries()) {
             if (!currentModIds.has(id)) {
@@ -561,13 +573,29 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         modules.forEach(mod => {
             const mAny = mod as any;
-            const uniqueId = mAny.id || mAny.instanceId || `${mod.gridX}_${mod.gridY}`;
-            const worldPos = BuildingManager.gridToWorld(mod.gridX, mod.gridY);
+            const uniqueId = getModuleUniqueId(mAny);
             const w = mod.width * GRID_PIXEL_SIZE;
             const h = mod.height * GRID_PIXEL_SIZE;
-            const centerX = worldPos.x + w/2;
-            const centerY = worldPos.y + h/2;
             const modData = (GameConfig as any).MODULES[mod.moduleId];
+
+            // 【架构大一统】：剥夺渲染层计算坐标的权力，完全听命于空间注册表
+            let centerX = 0, centerY = 0, worldPosX = 0, worldPosY = 0;
+            const registryEntry = UniverseEngine.getRegistryEntry(mod.uid);
+            
+            if (registryEntry) {
+                // 优先使用最高权威：UniverseEngine 算好的纯净几何中心
+                centerX = registryEntry.worldX;
+                centerY = registryEntry.worldY;
+                worldPosX = centerX - w / 2;
+                worldPosY = centerY - h / 2;
+            } else {
+                // 仅作为刚放置但还没进下一帧注册表的临时回退
+                const fallbackPos = BuildingManager.gridToWorld(mod.gridX, mod.gridY);
+                centerX = fallbackPos.x + w / 2;
+                centerY = fallbackPos.y + h / 2;
+                worldPosX = fallbackPos.x;
+                worldPosY = fallbackPos.y;
+            }
 
             let cacheObj = this.moduleSprites.get(uniqueId);
             if (!cacheObj) {
@@ -614,15 +642,15 @@ export class RadarScene extends (window as any).Phaser.Scene {
                         }
 
                         if (effectiveRule.left === "port") {
-                            drawX = worldPos.x + actualW / 2;
+                            drawX = worldPosX + actualW / 2;
                         } else if (effectiveRule.right === "port") {
-                            drawX = worldPos.x + w - actualW / 2;
+                            drawX = worldPosX + w - actualW / 2;
                         }
                         
                         if (effectiveRule.up === "port") {
-                            drawY = worldPos.y + actualH / 2;
+                            drawY = worldPosY + actualH / 2;
                         } else if (effectiveRule.down === "port") {
-                            drawY = worldPos.y + h - actualH / 2;
+                            drawY = worldPosY + h - actualH / 2;
                         }
                     }
                     
@@ -651,8 +679,8 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
                         document.dispatchEvent(new CustomEvent('radar_right_click', {
                             detail: {
-                                x: worldPos.x + w/2,
-                                y: worldPos.y + h/2,
+                                x: centerX,
+                                y: centerY,
                                 screenX: pointer.event.clientX,
                                 screenY: pointer.event.clientY,
                                 // 我们将所属的真实实体ID传出去，不管是停泊、观察还是交流都会指向整个空间站
@@ -680,24 +708,24 @@ export class RadarScene extends (window as any).Phaser.Scene {
             const isCore = modData && modData.category === 'core';
             const fillColor = isCore ? 0x0088ff : 0xff8800;
             this.stationGraphics.fillStyle(fillColor, 0.1);
-            this.stationGraphics.fillRect(worldPos.x, worldPos.y, w, h);
+            this.stationGraphics.fillRect(worldPosX, worldPosY, w, h);
 
             // 绘制模块的外边框
             this.stationGraphics.lineStyle(4, 0x00ff00, 0.8);
-            this.stationGraphics.strokeRect(worldPos.x, worldPos.y, w, h);
+            this.stationGraphics.strokeRect(worldPosX, worldPosY, w, h);
             
             // 绘制模块内部的网格线（如果占据多个网格）
             this.stationGraphics.lineStyle(1, 0x00ff00, 0.3);
             for(let i=1; i<mod.width; i++) {
                 this.stationGraphics.beginPath();
-                this.stationGraphics.moveTo(worldPos.x + i*GRID_PIXEL_SIZE, worldPos.y);
-                this.stationGraphics.lineTo(worldPos.x + i*GRID_PIXEL_SIZE, worldPos.y + h);
+                this.stationGraphics.moveTo(worldPosX + i*GRID_PIXEL_SIZE, worldPosY);
+                this.stationGraphics.lineTo(worldPosX + i*GRID_PIXEL_SIZE, worldPosY + h);
                 this.stationGraphics.strokePath();
             }
             for(let j=1; j<mod.height; j++) {
                 this.stationGraphics.beginPath();
-                this.stationGraphics.moveTo(worldPos.x, worldPos.y + j*GRID_PIXEL_SIZE);
-                this.stationGraphics.lineTo(worldPos.x + w, worldPos.y + j*GRID_PIXEL_SIZE);
+                this.stationGraphics.moveTo(worldPosX, worldPosY + j*GRID_PIXEL_SIZE);
+                this.stationGraphics.lineTo(worldPosX + w, worldPosY + j*GRID_PIXEL_SIZE);
                 this.stationGraphics.strokePath();
             }
 
@@ -1015,6 +1043,11 @@ export class RadarScene extends (window as any).Phaser.Scene {
 
         // 渲染远距离战术图标
         this.updateTacticalIcons();
+
+        const cost = performance.now() - startTime;
+        if (cost > 10) { // 如果单帧耗时超过 10ms，打印警告
+            console.warn(`[PERF] RadarScene.update 耗时过高: ${cost.toFixed(2)} ms`);
+        }
     }
 
     /**
@@ -1042,6 +1075,7 @@ export class RadarScene extends (window as any).Phaser.Scene {
      * 同步后台实体状态到渲染层
      */
     syncEntities(entitiesData: any) {
+        const startTime = performance.now();
         if (!this.shipSprites) return;
         
         const { ships, projectiles, missiles, asteroids, drops, selectedUnitIds, nodes, gates, commandLines } = entitiesData;
@@ -1104,62 +1138,12 @@ export class RadarScene extends (window as any).Phaser.Scene {
                 this.shipSprites.set(ent.id, sprite);
             }
 
-            // 查找它的泊位坐标
-            const mod = BuildingManager.getAllModules().find((m: any) => m.uid === ent.dockedAt);
-            if (mod) {
-                const modData = (GameConfig as any).MODULES[mod.moduleId];
-                if (modData && modData.berths) {
-                    const berth = modData.berths.find((b: any) => b.id === ent.dockedBerthId);
-                    if (berth) {
-                        // 重复一遍世界坐标和缩放转换逻辑，把它死死钉在那里
-                        const worldPos = BuildingManager.gridToWorld(mod.gridX, mod.gridY);
-                        const w = mod.width * GRID_PIXEL_SIZE;
-                        const h = mod.height * GRID_PIXEL_SIZE;
-                        let drawX = worldPos.x + w / 2;
-                        let drawY = worldPos.y + h / 2;
-                        let scale = 1;
-
-                        const rotation = mod.rotation || 0;
-
-                        if (modData.connectRule) {
-                            const isRotated = rotation % 180 !== 0;
-                            const spriteOrigW = modData.spriteSize ? modData.spriteSize.width : w;
-                            const spriteOrigH = modData.spriteSize ? modData.spriteSize.height : h;
-                            const visualOrigW = isRotated ? spriteOrigH : spriteOrigW;
-                            const visualOrigH = isRotated ? spriteOrigW : spriteOrigH;
-
-                            scale = Math.min(w / visualOrigW, h / visualOrigH);
-                            const actualW = visualOrigW * scale;
-                            const actualH = visualOrigH * scale;
-
-                            let effectiveRule = { ...modData.connectRule };
-                            if (rotation === 90) {
-                                effectiveRule = { up: modData.connectRule.left, right: modData.connectRule.up, down: modData.connectRule.right, left: modData.connectRule.down };
-                            } else if (rotation === 180) {
-                                effectiveRule = { up: modData.connectRule.down, right: modData.connectRule.left, down: modData.connectRule.up, left: modData.connectRule.right };
-                            } else if (rotation === 270) {
-                                effectiveRule = { up: modData.connectRule.right, right: modData.connectRule.down, down: modData.connectRule.left, left: modData.connectRule.up };
-                            }
-
-                            if (effectiveRule.left === "port") { drawX = worldPos.x + actualW / 2; } 
-                            else if (effectiveRule.right === "port") { drawX = worldPos.x + w - actualW / 2; }
-                            
-                            if (effectiveRule.up === "port") { drawY = worldPos.y + actualH / 2; } 
-                            else if (effectiveRule.down === "port") { drawY = worldPos.y + h - actualH / 2; }
-                        }
-
-                        const rad = rotation * Math.PI / 180;
-                        const ox = berth.offset.x * scale;
-                        const oy = berth.offset.y * scale;
-
-                        const rotatedOffsetX = ox * Math.cos(rad) - oy * Math.sin(rad);
-                        const rotatedOffsetY = ox * Math.sin(rad) + oy * Math.cos(rad);
-
-                        ent.location.x = drawX + rotatedOffsetX;
-                        ent.location.y = drawY + rotatedOffsetY;
-                        ent.rotation = (berth.entryAngle + rotation) % 360;
-                    }
-                }
+            // 让 RadarScene 直接读取宏观数据层中记录的绝对坐标进行渲染，不再重复自行推算
+            // ShipManager/Base-Docking 分配泊位时已经将确切的世界坐标写入了 dockingGuidanceTarget 或 location
+            if (ent.location) {
+                // 如果 ent 已经在物理层，直接使用物理坐标，无需任何改动。
+                // 停泊的飞船，其绝对物理坐标 (location.x, location.y, rotation) 
+                // 已经在触发 DOCKED 时由 Base-Docking / UniverseEngine 计算并固化。
             }
 
             // 伪造一个能给 ShipSprite 读取的 entRef
@@ -1209,6 +1193,11 @@ export class RadarScene extends (window as any).Phaser.Scene {
                     this.dockingGuidances.delete(shipId);
                 }
             }
+        }
+        
+        const cost = performance.now() - startTime;
+        if (cost > 10) {
+            console.warn(`[PERF] RadarScene.syncEntities 耗时过高: ${cost.toFixed(2)} ms`);
         }
     }
 

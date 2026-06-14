@@ -7,14 +7,17 @@ import { getGlobalInternalModulesPool } from './worldbook/Worldbook-InternalModu
 import { InternalModuleProcessor } from '../managers/building/InternalModuleProcessor.js';
 import { AffinityManager } from '../managers/AffinityManager.js';
 import { NPCManager } from '../managers/NPCManager.js';
+import { UniverseEngine } from '../managers/engine/UniverseEngine.js';
 
 export class WorldbookManager {
     static sectors = [];
     static lanes = [];
+    static cachedWorldState: any = null;
 
     static reset() {
         this.sectors = [];
         this.lanes = [];
+        this.cachedWorldState = null;
     }
 
     // --- 获取星区当前阵营 ---
@@ -113,12 +116,21 @@ export class WorldbookManager {
         worldState.stations.push(newStation);
         this.saveWorldState(worldState);
 
+        // 挂载实时同步 Hook：新建空间站后，立刻注入 UniverseEngine 的空间注册表中
+        if (UniverseEngine && typeof UniverseEngine.registerModule === 'function') {
+            newStation.modules.forEach((mod: any) => {
+                UniverseEngine.registerModule(newStation, mod);
+            });
+        }
+
         // console.log(`[WorldbookManager] 成功在 ${sectorName} 生成了类型为 ${templateType} 的空间站`);
         return newStation;
     }
 
     // --- Static method to manage world state ---
     static getWorldState() {
+        if (this.cachedWorldState) return this.cachedWorldState;
+
         const savedState = localStorage.getItem('world_state');
         if (savedState) {
             try {
@@ -166,6 +178,16 @@ export class WorldbookManager {
                     if (modified) {
                         localStorage.setItem('world_state', JSON.stringify(parsed));
                     }
+                    
+                    this.cachedWorldState = parsed;
+
+                    // 存档读取成功，初始化全宇宙空间注册表和建筑管理器
+                    if (UniverseEngine && typeof UniverseEngine.buildSpatialRegistry === 'function') {
+                        UniverseEngine.buildSpatialRegistry(parsed);
+                    }
+                    import('../managers/BuildingManager.js').then(({ BuildingManager }) => {
+                        BuildingManager.loadFromWorldState(parsed);
+                    });
                     
                     return parsed;
                 }
@@ -342,11 +364,21 @@ export class WorldbookManager {
         });
 
         localStorage.setItem('world_state', JSON.stringify(defaultState));
+        this.cachedWorldState = defaultState;
+        
+        // 全新开局，初始化全宇宙空间注册表和建筑管理器
+        if (UniverseEngine && typeof UniverseEngine.buildSpatialRegistry === 'function') {
+            UniverseEngine.buildSpatialRegistry(defaultState);
+        }
+        import('../managers/BuildingManager.js').then(({ BuildingManager }) => {
+            BuildingManager.loadFromWorldState(defaultState);
+        });
         
         return defaultState;
     }
 
     static saveWorldState(state) {
+        this.cachedWorldState = state;
         localStorage.setItem('world_state', JSON.stringify(state));
     }
 

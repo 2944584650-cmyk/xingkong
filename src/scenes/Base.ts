@@ -9,7 +9,7 @@ import { BuildingManager } from '../managers/BuildingManager.js';
 import { LLMService } from '../services/LLMService.js';
 import { EventBus, GameEvents } from '../utils/EventBus.js';
 import { checkDroneSurvival } from './base/Base-WuRenJi.js';
-import { processBuildingBeamHit, processMacroBuildingQueue, handleStartShipBuild } from './base/Base-Building.js';
+import { processBuildingBeamHit, processMacroBuildingQueue, handleStartShipBuild } from '../managers/building/BuildingProcessor.js';
 import { processMacroDockingQueue, checkDockingGuidance, debugDockingStatus } from './base/Base-Docking.js';
 import { handleFleetCommand } from './base/Base-Fleet.js';
 import { processAILogic } from './base/Base-AI.js';
@@ -18,6 +18,7 @@ import { AffinityManager } from '../managers/AffinityManager.js';
 import { triggerWarp } from '../managers/oos/OOS-Travel.js';
 import { createExplosion, createImplosion, createGateExitEffect, showRTSFeedback, createLaserBeam } from './base/Base-Effects.js';
 import { updateSystemRadar } from './base/Base-Radar.js';
+import { UniverseEngine } from '../managers/engine/UniverseEngine.js';
 
 /**
  * 核心好感度系统：实体 A 对实体 B 的态度评分
@@ -137,6 +138,9 @@ export class Base extends Phaser.Scene {
     initCoreEngine() {
         let currentSector = localStorage.getItem('current_sector');
         this.viewingSector = currentSector;
+        if (currentSector) {
+            localStorage.setItem('viewing_sector', currentSector);
+        }
         
         // [核心修复] 第一帧竞态条件防死锁
         // 场景刚重启的这微小时间里，ShipManager 如果跑在 updateSystemRadar 前面，
@@ -824,13 +828,17 @@ export class Base extends Phaser.Scene {
     }
 
     update(time, delta) {
+        const perfStart = performance.now();
         // if (!this.contentDOM) return;
         if (this.isChangingShip) return; // 换船瞬间绝对熔断，防止发生状态污染
         
         const dt = Math.min(delta / 1000, 0.1);
 
         // [核心修复] 驱动整个宏观宇宙的飞船后台演算 (包含僚机跟随、商船寻路、自动跃迁)
+        const shipUpdateStart = performance.now();
         ShipManager.update(dt, WorldbookManager.getWorldState());
+        const shipUpdateCost = performance.now() - shipUpdateStart;
+        if (shipUpdateCost > 5) console.warn(`[PERF] Base.update -> ShipManager.update 耗时: ${shipUpdateCost.toFixed(2)} ms`);
 
         // 处理玩家的宏观星图跃迁航行
         const pd = PlayerManager.getStats();
@@ -894,7 +902,10 @@ export class Base extends Phaser.Scene {
 
         // 始终更新微观物理雷达。
         // 即便玩家在跃迁期间看大地图，原星区的物理演算也不能停滞，必须在后台继续运转。
+        const radarStart = performance.now();
         this.updateSystemRadar(time, delta);
+        const radarCost = performance.now() - radarStart;
+        if (radarCost > 5) console.warn(`[PERF] Base.update -> updateSystemRadar 耗时: ${radarCost.toFixed(2)} ms`);
 
         // --- 实时刷新舰队指挥面板的血量监控 ---
         if (true) { // 持续广播数据供 React 消费
@@ -954,6 +965,9 @@ export class Base extends Phaser.Scene {
             // 调用 UI 的轻量化增量更新
             EventBus.dispatchEvent(new CustomEvent(GameEvents.UPDATE_FLEET_DATA, { detail: pd }));
         }
+
+        const totalCost = performance.now() - perfStart;
+        if (totalCost > 15) console.warn(`[PERF] Base.update 总耗时过高: ${totalCost.toFixed(2)} ms`);
     }
 
     drawPlayerOnStarmap(container, macroShip) {
@@ -997,129 +1011,49 @@ export class Base extends Phaser.Scene {
     }
 
     // [大一统] 通用星门跃迁检测函数
-    // 只要物理上撞进星门，就无条件触发跃迁逻辑
+    // 玩家自己碰撞星门的物理判定依然保留在表现层，因为牵扯到吸入特效和镜头控制
+    // 但 AI 的跃迁逻辑已被抽离至 NavigationSystem 后台执行
     tryEnterStargate(entity, isPlayer, dummyLayer) {
-        // [Fix] 直接从当前的仿真上下文中提取准确的星门数据
-        const gatesToCheck = this.radarEntities ? this.radarEntities.gates : null;
-        if (!gatesToCheck) {
-            if (isPlayer) console.warn(`[Jump Debug] 实体 ${entity.id} 所在星区没有 gates 数据，可能是存档问题导致没有生成连线！`);
+        if (!isPlayer) {
+            // 如果已经被后台 NavigationSystem 判定为跃迁，则在表现层播个特效然后销毁
+            if (entity.shipRef && entity.shipRef.state === 'WARP' && !entity.isWarping) {
+                this.createImplosion(null, entity.x, entity.y);
+                entity.isWarping = true;
+                return true;
+            }
             return false;
         }
 
+        // 以下是纯玩家物理碰撞判定
+        const gatesToCheck = this.radarEntities ? this.radarEntities.gates : null;
+        if (!gatesToCheck) return false;
+
         for (const [gateName, gatePos] of Object.entries(gatesToCheck)) {
             const dist = Math.hypot(entity.x - gatePos.x, entity.y - gatePos.y);
-            
-            // 判定阈值：玩家宽容度高一点(800)，AI精准一点(500)
-            // 考虑到星门可能比以前更远，增加一点判定阈值，防止飞船“滑过”星门
-            const threshold = isPlayer ? 1000 : 800; 
+            const threshold = 1000; 
             
             if (dist < threshold) {
-                // --- 触发跃迁 ---
-                // console.log(`[Jump Debug] 实体 ${entity.id} (isPlayer=${isPlayer}) 撞到了星门: ${gateName}，距离: ${Math.round(dist)}`);
-                
-                // 1. 播放吸入特效
                 this.createImplosion(null, entity.x, entity.y);
                 
-                // 2. 处理逻辑状态
-                if (isPlayer) {
-                    this.isJumping = true;
-                    this.playerCursors.left.reset();
-                    this.playerCursors.right.reset();
-                    this.playerCursors.up.reset();
-                    this.playerCursors.down.reset();
+                this.isJumping = true;
+                this.playerCursors.left.reset();
+                this.playerCursors.right.reset();
+                this.playerCursors.up.reset();
+                this.playerCursors.down.reset();
+                
+                EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff; font-style:italic; border-left:3px solid #00ffff; padding-left:10px; margin-top:10px;">[系统] 跃迁引擎启动... 正在穿越折跃门。<br>目标星区：<b>${gateName}</b></div>` }));
+                
+                const pd = PlayerManager.getStats();
+                const macroShip = ShipManager.getShipById(pd.playerShipId);
+                if (macroShip) {
+                    const worldState = WorldbookManager.getWorldState();
+                    macroShip.path = [gateName];
+                    macroShip.state = 'DEPARTURE';
+                    macroShip.targetGate = gateName;
                     
-                    EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffff; font-style:italic; border-left:3px solid #00ffff; padding-left:10px; margin-top:10px;">[系统] 跃迁引擎启动... 正在穿越折跃门。<br>目标星区：<b>${gateName}</b></div>` }));
-                    
-                    const pd = PlayerManager.getStats();
-                    const macroShip = ShipManager.getShipById(pd.playerShipId);
-                    if (macroShip) {
-                        const worldState = WorldbookManager.getWorldState();
-                        macroShip.path = [gateName];
-                        macroShip.state = 'DEPARTURE';
-                        macroShip.targetGate = gateName;
-                        
-                        triggerWarp(macroShip, gateName, worldState);
-                    } else {
-                        console.error(`[Jump Error] 严重错误：无法在宏观宇宙中找到玩家的飞船实体！\n寻找的目标 playerShipId: ${pd.playerShipId}\n当前宇宙中所有存在的飞船 ID:`, window.ShipManager ? window.ShipManager.ships.map(s => s.id) : "ShipManager undefined");
-                        this.isJumping = false; // 释放锁，防止卡死
-                        alert("系统出现内部状态错误：宏观星图丢失了你的飞船数据，跃迁引擎保护性中止。\n请按 F12 截图发给开发人员。");
-                        return false;
-                    }
-                    
-                    // [解耦] 旗舰跃迁逻辑：只带走真正编属于玩家当前舰队的僚机
-                    const myFleet = ShipManager.getFleetByShipId(pd.playerShipId);
-                    if (myFleet && myFleet.flagshipId === pd.playerShipId) {
-                        if (this.radarEntities.defenders) {
-                            this.radarEntities.defenders.forEach(def => {
-                                if (myFleet.members.includes(def.id) && def.shipRef) {
-                                    def.shipRef.state = 'DEPARTURE';
-                                    def.shipRef.targetGate = gateName;
-                                    def.shipRef.transitToGate = gateName;
-                                    def.shipRef.path = [gateName];
-                                    def.shipRef.commandState = null;
-                                    def.moveTarget = null;
-                                    def.target = null;
-                                }
-                            });
-                        }
-                    }
-                    
-                    return true;
-                } else {
-                    // AI 逻辑
-                    if (entity.shipRef) {
-                        const worldState = WorldbookManager.getWorldState();
-                        let shouldWarp = false;
-
-                        // 区分情况：如果是正在正常寻路的商船/AI，只有撞到它原本的目标门才允许跃迁
-                        if (entity.shipRef.state === 'DEPARTURE' && entity.shipRef.targetGate === gateName) {
-                            triggerWarp(entity.shipRef, gateName, worldState);
-                            shouldWarp = true;
-                        } else if (entity.shipRef.state === 'TRANSIT' && entity.shipRef.transitToGate === gateName) {
-                            triggerWarp(entity.shipRef, gateName, worldState);
-                            shouldWarp = true;
-                        } else if (entity.isWingman || entity.shipRef.commandState === 'MOVE_TO') {
-                            // 对于被玩家强制下令撞门的僚机，强行覆盖其航线
-                            entity.shipRef.state = 'DEPARTURE';
-                            entity.shipRef.targetGate = gateName;
-                            entity.shipRef.transitToGate = gateName;
-                            entity.shipRef.path = [gateName]; 
-                            entity.shipRef.commandState = null;
-                            entity.moveTarget = null;
-                            triggerWarp(entity.shipRef, gateName, worldState);
-                            shouldWarp = true;
-                        }
-
-                        // 只要状态变了 WARP，就成功
-                        if (shouldWarp) {
-                            entity.shipRef.state = 'WARP'; // 强行在此处统一状态，防止等待异步 import 时丢失状态
-                            entity.isWarping = true; // 标记安全离场
-                            
-                            // [解耦] 通用旗舰跃迁逻辑：带走属于自己舰队的僚机
-                            const myFleet = ShipManager.getFleetByShipId(entity.id);
-                            if (myFleet && myFleet.flagshipId === entity.id) {
-                                if (this.radarEntities.defenders) {
-                                    this.radarEntities.defenders.forEach(def => {
-                                        if (myFleet.members.includes(def.id) && def.shipRef) {
-                                            def.shipRef.state = 'DEPARTURE';
-                                            def.shipRef.targetGate = gateName;
-                                            def.shipRef.transitToGate = gateName;
-                                            def.shipRef.path = [gateName];
-                                            def.shipRef.commandState = null;
-                                            def.moveTarget = null;
-                                            def.target = null;
-                                        }
-                                    });
-                                }
-                            }
-
-                            if (entity.isWingman && entity.ownerId === 'player') {
-                                EventBus.dispatchEvent(new CustomEvent(GameEvents.APPEND_CHAT, { detail: `<div style="color:#00ffaa;">[舰队] 僚机 ${entity.shipRef.name || 'Unknown'} 确认进入折跃门，前往 [${gateName}]。</div>` }));
-                            }
-                            return true; // 指示外部移除实体
-                        }
-                    }
+                    triggerWarp(macroShip, gateName, worldState);
                 }
+                return true;
             }
         }
         return false;
@@ -1138,42 +1072,17 @@ export class Base extends Phaser.Scene {
     }
 
     handleWorldTick() {
-        const worldHasChanged = WorldbookManager.tickWorld();
+        const tickStart = performance.now();
+        // [Engine Decoupling] 原先耦合在这里的建筑推演、停泊推演已经被抽离至 UniverseEngine 纯数据层
+        // 未来 ShipManager.update 等纯逻辑也将完全在 UniverseEngine 的 tick 中执行
+        // 这里的 200ms tick 主要提供 dt = 0.2
+        const dt = 0.2; 
         
-        let currentSectorName = localStorage.getItem('current_sector');
+        // 调用底层宇宙引擎进行演化
+        const worldHasChanged = UniverseEngine.tick(dt, this.viewingSector);
 
-        // --- 全宇宙建筑模块建造队列调度（彻底打破主角中心论） ---
-        const ws = WorldbookManager.getWorldState();
-        
-        // 获取所有活跃星区（包括物理星区和远程观测星区）
-        const viewingSector = this.viewingSector || currentSectorName;
-        const allShipSectors = new Set<string>();
-        ShipManager.ships.forEach(s => {
-            if (s.location && s.location.sector) allShipSectors.add(s.location.sector);
-        });
-        const activeSectors = Array.from(allShipSectors);
-        if (currentSectorName && !activeSectors.includes(currentSectorName)) activeSectors.push(currentSectorName);
-        if (viewingSector && !activeSectors.includes(viewingSector)) activeSectors.push(viewingSector);
-
-        let globalNeedsSave = false;
-
-        if (ws && ws.stations) {
-            // 对所有活跃星区分别调用剥离出来的宏观建筑与无人机调度逻辑
-            activeSectors.forEach(sectorName => {
-                const needsSave = processMacroBuildingQueue(ws, sectorName);
-                if (needsSave) globalNeedsSave = true;
-            });
-            
-            // 只要有一个空间站的队伍出列了，就需要保存整个世界的队伍状态
-            if (globalNeedsSave) {
-                WorldbookManager.saveWorldState(ws);
-            }
-        }
-        
-        // --- 停泊系统 4.0: 港务局后台调度 ---
-        activeSectors.forEach(sectorName => {
-            processMacroDockingQueue(sectorName);
-        });
+        const engineCost = performance.now() - tickStart;
+        if (engineCost > 10) console.warn(`[PERF] UniverseEngine.tick 耗时过高: ${engineCost.toFixed(2)} ms`);
 
         if (worldHasChanged) {
             const ecoModal = this.contentDOM?.node?.querySelector('#modal-economy');
@@ -1203,6 +1112,9 @@ export class Base extends Phaser.Scene {
     // 切换雷达监视画面
     switchRadarView(sectorName) {
         this.viewingSector = sectorName;
+        if (sectorName) {
+            localStorage.setItem('viewing_sector', sectorName);
+        }
         // 重新初始化静态背景
         if (this.contentDOM) {
             this.initSystemRadarStatic(this.contentDOM);

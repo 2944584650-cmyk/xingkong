@@ -3,7 +3,8 @@ import { EventBus, GameEvents } from '../utils/EventBus.js';
 import { OOSSimulator } from './OOSSimulator.js';
 import { ShipDecision, ShipExecution } from './ship/ShipDecision.js';
 import { BuildingManager, GRID_PIXEL_SIZE } from './BuildingManager.js';
-import { triggerWarp, updateTravel } from './oos/OOS-Travel.js';
+import { updateTravel } from './oos/OOS-Travel.js';
+import { NavigationSystem } from './engine/systems/NavigationSystem.js';
 import { ShipData } from '../data/ShipData.js';
 import { NPCManager } from './NPCManager.js';
 
@@ -554,13 +555,9 @@ export class Ship implements ShipData {
             this.state = 'IDLE';
         }
         
-        // --- 无论 IS 还是 OOS，跃迁进度都由 OOS-Travel 统筹推进 ---
+        // --- 无论 IS 还是 OOS，跃迁进度与星门寻路判定全部由 NavigationSystem 统筹推进 ---
         if (['DEPARTURE', 'WARP', 'TRANSIT', 'ARRIVAL'].includes(this.state)) {
-            // 如果处于活跃星区，DEPARTURE 等状态通常是由物理碰撞星门来完成状态切换的 (在 Base.ts 的 tryEnterStargate 里调用 forceCompleteTravel/triggerWarp)
-            // 但是如果它纯粹是 WARP 状态，或者出于 OOS，则完全交由 updateTravel 推演
-            if (!isActiveSim || this.state === 'WARP') {
-                updateTravel(this, dt, worldState);
-            }
+            NavigationSystem.update(this, dt, worldState);
         }
 
         // --- 核心分发层 (Decision Layer): 基于原子任务栈 (Task Stack) ---

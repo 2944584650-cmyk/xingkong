@@ -399,12 +399,12 @@ export class ShipExecution {
                     ship.commandState = 'DOCK';
                     ship.commandTargetId = task.targetBaseUid; // 确保 OOS/物理层 能知道目标建筑的 UID
                     
-                    // 发送事件，由 Base-Docking.ts 统一处理分配泊位和物理引导
-                    if (typeof document !== 'undefined') {
-                        document.dispatchEvent(new CustomEvent('ui_apply_docking', { 
-                            detail: { moduleId: task.targetBaseUid, shipId: ship.id } 
-                        }));
-                    }
+                    // 将分配泊位的逻辑下沉到 OOS 的世界核心执行，取代只在前端发出 ui_apply_docking 事件
+                    import('../../../src/scenes/base/Base-Docking.js').then(module => {
+                        module.handleApplyDocking({
+                            detail: { moduleId: task.targetBaseUid, shipId: ship.id }
+                        });
+                    });
                 }
                 break; // 必须有 break，防止穿透
             }
